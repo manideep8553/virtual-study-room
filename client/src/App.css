@@ -1,0 +1,4 @@
+/* App specific styles if any */
+.mirror {
+  transform: scaleX(-1);
+}
