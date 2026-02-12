@@ -385,7 +385,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                                 style={{
                                     width: '100%',
                                     height: '100%',
-                                    objectFit: 'contain', // Fixed cropping issue
+                                    objectFit: 'cover', // Cover looks more professional like Zoom
                                     transform: 'scaleX(-1)',
                                     background: '#000'
                                 }}
@@ -917,90 +917,62 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                     to { transform: translateX(0); }
                 }
 
-                /* Overhauled Dynamic Video Grid System */
+                /* ZOOM-LIKE VIDEO GRID */
                 .video-grid {
                     display: grid;
                     gap: 16px;
                     width: 100%;
                     height: 100%;
-                    padding: 10px;
+                    padding: 16px;
                     box-sizing: border-box;
-                    align-items: center;
+                    align-content: center;
                     justify-content: center;
-                    overflow-y: auto;
-                    
-                    /* Laptop Logic */
-                    grid-template-columns: ${participantCount === 1 ? '1fr' :
+                    grid-template-columns: ${participantCount === 1 ? 'minmax(300px, 800px)' :
                     participantCount === 2 ? 'repeat(2, 1fr)' :
-                        participantCount === 3 ? 'repeat(2, 1fr)' :
-                            'repeat(auto-fit, minmax(350px, 1fr))'
-                };
+                        'repeat(auto-fit, minmax(400px, 1fr))'};
+                    grid-auto-rows: ${participantCount <= 2 ? '1fr' : 'auto'};
                 }
 
                 .video-cell {
                     background: #111827;
-                    border-radius: 16px;
+                    border-radius: 12px;
                     overflow: hidden;
                     position: relative;
                     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border: 2px solid rgba(255, 255, 255, 0.05);
+                    width: 100%;
+                    height: 100%;
+                    min-height: 200px;
                     display: flex;
-                    flex-direction: column;
                     align-items: center;
                     justify-content: center;
-                    width: 100%;
-                    margin: auto;
                     aspect-ratio: 16/9;
-                    max-height: ${participantCount <= 2 ? '70vh' : '40vh'};
                 }
-
-                /* Special handling for the 3rd participant on Laptop (2 on top, 1 on bottom) */
-                ${participantCount === 3 ? `
-                    .video-cell:last-child {
-                        grid-column: span 2;
-                        max-width: 50%;
-                        margin: 0 auto;
-                    }
-                ` : ''}
 
                 .video-cell video {
                     width: 100%;
                     height: 100%;
-                    object-fit: contain; /* CRITICAL: Never cut the video */
+                    object-fit: cover; /* Professional video apps use cover */
                     background: #000;
                 }
 
-                /* Mobile Dynamic Adjustments */
                 @media (max-width: 768px) {
                     .video-grid {
-                        grid-template-columns: ${participantCount > 1 ? 'repeat(2, 1fr)' : '1fr'} !important;
-                        grid-auto-rows: min-content;
-                        padding: 8px !important;
-                        gap: 8px !important;
+                        grid-template-columns: 1fr !important;
+                        padding: 10px !important;
+                        gap: 12px !important;
                     }
 
                     .video-cell {
-                        aspect-ratio: 1/1 !important; /* Square for mobile grid */
-                        max-height: 30vh !important;
-                    }
-
-                    ${participantCount % 2 !== 0 ? `
-                        .video-cell:last-child {
-                            grid-column: span 2 !important;
-                            max-width: 100% !important;
-                        }
-                    ` : ''}
-                     main {
-                        padding: 12px !important;
-                        padding-bottom: 100px !important; 
-                        overflow-y: auto !important;
+                        aspect-ratio: 16/9 !important;
+                        height: auto !important;
                     }
                 }
        /* Adjust header/footer for mobile */
                      header {
                         padding: 0 16px !important;
                     }
-                    
+
                     footer {
                         width: calc(100% - 32px) !important;
                         bottom: 24px !important;
@@ -1038,6 +1010,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
 
 const VideoPlayer = ({ stream }) => {
     const videoRef = useRef();
+    const [needsInteraction, setNeedsInteraction] = useState(false);
 
     useEffect(() => {
         const video = videoRef.current;
@@ -1045,7 +1018,10 @@ const VideoPlayer = ({ stream }) => {
             video.srcObject = stream;
 
             const handlePlay = () => {
-                video.play().catch(e => console.log("Audio/Video playback interaction needed"));
+                video.play().catch(e => {
+                    console.log("Autoplay blocked:", e);
+                    setNeedsInteraction(true);
+                });
             };
 
             if (video.readyState >= 1) handlePlay();
@@ -1053,14 +1029,39 @@ const VideoPlayer = ({ stream }) => {
         }
     }, [stream]);
 
+    const forcePlay = () => {
+        if (videoRef.current) {
+            videoRef.current.play();
+            setNeedsInteraction(false);
+        }
+    };
+
     return (
-        <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted={false}
-            style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
-        />
+        <div style={{ width: '100%', height: '100%', position: 'relative' }} onClick={forcePlay}>
+            <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted={false}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }}
+            />
+            {needsInteraction && (
+                <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: 'rgba(0,0,0,0.6)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2,
+                    cursor: 'pointer'
+                }}>
+                    <div style={{ background: '#8b5cf6', padding: '8px 16px', borderRadius: '8px', color: 'white', fontSize: '12px', fontWeight: 'bold' }}>
+                        CLICK TO ENABLE AUDIO
+                    </div>
+                </div>
+            )}
+        </div>
     );
 };
 
