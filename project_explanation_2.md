@@ -70,3 +70,6 @@ The application is built on a high-concurrency model designed for zero-delay syn
 
 **Summary for Reviewer:**
 This is a **Full-Stack MERN (MongoDB, Express, React, Node)** application utilizing **WebRTC** for P2P communication. It solves complex real-time synchronization issues using a custom signaling layer implemented with **Socket.io**.
+
+
+

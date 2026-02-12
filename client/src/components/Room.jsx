@@ -858,7 +858,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                     <div style={{ display: activeTab === 'tools' ? 'flex' : 'none', height: '100%', flexDirection: 'column', overflowY: 'auto' }}>
                         <div style={{ padding: '24px' }}>
                             <div style={{ padding: '16px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '20px', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
-                                <PomodoroTimer />
+                                <PomodoroTimer socket={socket} roomId={roomId} />
                             </div>
                         </div>
                     </div>
@@ -1008,21 +1008,31 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                 }
 
                 .mobile-only { display: none; }
-                ::-webkit-scrollbar {
-                    width: 6px;
-                }
-                ::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                ::-webkit-scrollbar-thumb {
-                    background: rgba(255, 255, 255, 0.1);
-                    border-radius: 10px;
-                }
-                ::-webkit-scrollbar-thumb:hover {
-                    background: rgba(255, 255, 255, 0.2);
-                }
+                ::-webkit-scrollbar { width: 6px; }
+                ::-webkit-scrollbar-track { background: transparent; }
+                ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+                ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
             `}</style>
-        </div >
+
+            {/* Mobile Sync Indicator */}
+            <div className="mobile-only" style={{
+                position: 'fixed',
+                top: '80px',
+                right: '16px',
+                background: 'rgba(15, 23, 42, 0.9)',
+                backdropFilter: 'blur(8px)',
+                padding: '6px 12px',
+                borderRadius: '12px',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                zIndex: 100,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+            }}>
+                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }}></div>
+                <span style={{ fontSize: '10px', fontWeight: '800', color: 'white', letterSpacing: '0.05em' }}>SYNCED</span>
+            </div>
+        </div>
     );
 };
 
@@ -1035,17 +1045,11 @@ const VideoPlayer = ({ stream }) => {
             video.srcObject = stream;
 
             const handlePlay = () => {
-                video.play().catch(err => {
-                    console.error("Video play failed:", err);
-                });
+                video.play().catch(e => console.log("Audio/Video playback interaction needed"));
             };
 
-            // Try to play immediately if metadata is loaded, otherwise wait
-            if (video.readyState >= 1) {
-                handlePlay();
-            } else {
-                video.onloadedmetadata = handlePlay;
-            }
+            if (video.readyState >= 1) handlePlay();
+            else video.onloadedmetadata = handlePlay;
         }
     }, [stream]);
 
@@ -1054,13 +1058,8 @@ const VideoPlayer = ({ stream }) => {
             ref={videoRef}
             autoPlay
             playsInline
-            muted={false} // Explicitly ensure audio is ON for remote streams
-            style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                background: '#000'
-            }}
+            muted={false}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
         />
     );
 };

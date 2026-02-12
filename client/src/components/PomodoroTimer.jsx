@@ -1,39 +1,72 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Coffee, Brain, Bell } from 'lucide-react';
 
-const PomodoroTimer = () => {
+const PomodoroTimer = ({ socket, roomId }) => {
     const [timeLeft, setTimeLeft] = useState(25 * 60);
     const [isActive, setIsActive] = useState(false);
     const [mode, setMode] = useState('focus'); // 'focus', 'shortBreak', 'longBreak'
 
     useEffect(() => {
+        if (!socket) return;
+
+        const handleSync = (data) => {
+            if (data.type === 'toggle') setIsActive(data.isActive);
+            if (data.type === 'reset' || data.type === 'mode') {
+                setIsActive(data.isActive);
+                setMode(data.mode);
+                setTimeLeft(data.timeLeft);
+            }
+            if (data.type === 'tick') setTimeLeft(data.timeLeft);
+        };
+
+        socket.on('sync_timer', handleSync);
+        return () => socket.off('sync_timer', handleSync);
+    }, [socket]);
+
+    useEffect(() => {
         let interval = null;
         if (isActive && timeLeft > 0) {
             interval = setInterval(() => {
-                setTimeLeft(timeLeft => timeLeft - 1);
+                setTimeLeft(prev => {
+                    const next = prev - 1;
+                    // Sync tick slightly less often to avoid network flood, or just let local tick handle it
+                    // if (next % 10 === 0) socket.emit('timer_update', { roomId, type: 'tick', timeLeft: next });
+                    return next;
+                });
             }, 1000);
         } else if (timeLeft === 0) {
             setIsActive(false);
-            // Optional: Play sound here
         }
         return () => clearInterval(interval);
-    }, [isActive, timeLeft]);
+    }, [isActive, timeLeft, socket, roomId]);
 
-    const toggleTimer = () => setIsActive(!isActive);
+    const toggleTimer = () => {
+        const nextActive = !isActive;
+        setIsActive(nextActive);
+        socket?.emit('timer_update', { roomId, type: 'toggle', isActive: nextActive });
+    };
 
     const resetTimer = () => {
         setIsActive(false);
-        if (mode === 'focus') setTimeLeft(25 * 60);
-        else if (mode === 'shortBreak') setTimeLeft(5 * 60);
-        else setTimeLeft(15 * 60);
+        let time = 25 * 60;
+        if (mode === 'focus') time = 25 * 60;
+        else if (mode === 'shortBreak') time = 5 * 60;
+        else time = 15 * 60;
+
+        setTimeLeft(time);
+        socket?.emit('timer_update', { roomId, type: 'reset', timeLeft: time, isActive: false, mode });
     };
 
     const changeMode = (newMode) => {
         setMode(newMode);
         setIsActive(false);
-        if (newMode === 'focus') setTimeLeft(25 * 60);
-        else if (newMode === 'shortBreak') setTimeLeft(5 * 60);
-        else setTimeLeft(15 * 60);
+        let time = 25 * 60;
+        if (newMode === 'focus') time = 25 * 60;
+        else if (newMode === 'shortBreak') time = 5 * 60;
+        else time = 15 * 60;
+
+        setTimeLeft(time);
+        socket?.emit('timer_update', { roomId, type: 'mode', timeLeft: time, isActive: false, mode: newMode });
     };
 
     const formatTime = (seconds) => {

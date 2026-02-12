@@ -344,6 +344,11 @@ io.on('connection', (socket) => {
         }
       }
     });
+
+    // Pomodoro Timer Sync
+    socket.on('timer_update', ({ roomId, type, timeLeft, isActive, mode }) => {
+      socket.to(roomId).emit('sync_timer', { type, timeLeft, isActive, mode });
+    });
   });
 });
 
