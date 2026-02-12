@@ -6,8 +6,6 @@ import PomodoroTimer from './PomodoroTimer';
 import Resources from './Resources';
 
 const Room = ({ socket, roomId, roomName, username, onLeave }) => {
-    // ...
-    // State and other code remains same...
     // State
     const [myStream, setMyStream] = useState(null);
     const [participants, setParticipants] = useState([]);
@@ -71,7 +69,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                 peerRef.current = peer;
 
                 peer.on('open', (myPeerId) => {
-                    setStatus('Online');
+                    setStatus('Live');
                     socket.emit('join_room', {
                         roomId,
                         username,
@@ -251,17 +249,18 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
         }
     };
 
-    const toggleAudio = () => {
+    const toggleMic = () => {
         if (streamRef.current) {
             streamRef.current.getAudioTracks().forEach(track => {
                 track.enabled = !track.enabled;
             });
-            setIsMuted(!streamRef.current.getAudioTracks()[0]?.enabled);
+            const micStatus = streamRef.current.getAudioTracks()[0]?.enabled ?? false;
+            setIsMicOn(micStatus);
             socket.emit('toggle_media', {
                 roomId,
                 peerId: peerRef.current?.id,
                 type: 'audio',
-                status: streamRef.current.getAudioTracks()[0]?.enabled
+                status: micStatus
             });
         }
     };
