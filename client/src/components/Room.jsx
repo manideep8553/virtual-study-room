@@ -5,7 +5,9 @@ import Chat from './Chat';
 import PomodoroTimer from './PomodoroTimer';
 import Resources from './Resources';
 
-const Room = ({ socket, roomId, username, onLeave }) => {
+const Room = ({ socket, roomId, roomName, username, onLeave }) => {
+    // ...
+    // State and other code remains same...
     // State
     const [myStream, setMyStream] = useState(null);
     const [participants, setParticipants] = useState([]);
@@ -172,62 +174,36 @@ const Room = ({ socket, roomId, username, onLeave }) => {
                         callsRef.current[peerId].close();
                         delete callsRef.current[peerId];
                     }
+                    if (peersRef.current[peerId]) peersRef.current[peerId].close();
+                    setParticipants((prev) => prev.filter(p => p.peerId !== peerId));
                 });
 
-                socket.on('message_history', (history) => {
-                    setMessages(history);
-                });
-
-                socket.on('media_status_changed', ({ peerId, type, status }) => {
-                    setRemoteStreams(prev => {
-                        if (!prev[peerId]) return prev;
-                        return {
-                            ...prev,
-                            [peerId]: {
-                                ...prev[peerId],
-                                [type === 'video' ? 'isVideoOn' : 'isMicOn']: status
-                            }
-                        };
-                    });
-                });
-
-                // Emit initial status after joining
-                socket.emit('toggle_media', { roomId, peerId: peer.id, type: 'video', status: true });
-                socket.emit('toggle_media', { roomId, peerId: peer.id, type: 'audio', status: true });
-
-                socket.on('eject_from_room', () => {
-                    alert('This room has been closed by the moderator.');
-                    onLeave();
+                socket.on('media_toggled', ({ peerId, type, status }) => {
+                    setParticipants(prev => prev.map(p => {
+                        if (p.peerId === peerId) {
+                            return type === 'audio' ? { ...p, isMuted: !status } : { ...p, isVidOn: status };
+                        }
+                        return p;
+                    }));
                 });
 
             } catch (err) {
-                setStatus('Failed');
+                console.error('Core Init Error:', err);
+                setStatus('Failed to load');
             }
         };
 
-        init();
+        if (roomId && username) {
+            init();
+        }
 
         return () => {
             isMounted = false;
-            // Stop the stream from the REF to handle async leaks
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
-            if (myMediaStream) {
-                myMediaStream.getTracks().forEach(track => track.stop());
-            }
-
+            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
             if (peer) peer.destroy();
-            Object.values(callsRef.current).forEach(call => { try { call.close(); } catch (e) { } });
-
-            socket.off('existing_participants');
-            socket.off('room_update');
-            socket.off('participant_left');
-            socket.off('message_history');
-            socket.off('media_status_changed');
-            socket.off('eject_from_room');
+            socket.emit('leave_room', roomId);
         };
-    }, [socket, roomId, username]);
+    }, [roomId, username, socket]);
 
     // Screen Share Logic
     const handleScreenShare = async () => {
@@ -275,27 +251,22 @@ const Room = ({ socket, roomId, username, onLeave }) => {
         }
     };
 
-    const toggleMic = () => {
+    const toggleAudio = () => {
         if (streamRef.current) {
             streamRef.current.getAudioTracks().forEach(track => {
                 track.enabled = !track.enabled;
             });
-            const micStatus = streamRef.current.getAudioTracks()[0]?.enabled ?? false;
-            setIsMicOn(micStatus);
+            setIsMuted(!streamRef.current.getAudioTracks()[0]?.enabled);
             socket.emit('toggle_media', {
                 roomId,
                 peerId: peerRef.current?.id,
                 type: 'audio',
-                status: micStatus
+                status: streamRef.current.getAudioTracks()[0]?.enabled
             });
         }
     };
 
     const toggleVideo = () => {
-        if (isScreenSharing) {
-            alert("Stop screen sharing to toggle camera.");
-            return;
-        }
         if (streamRef.current) {
             streamRef.current.getVideoTracks().forEach(track => {
                 track.enabled = !track.enabled;
@@ -311,7 +282,7 @@ const Room = ({ socket, roomId, username, onLeave }) => {
         }
     };
 
-    const participantCount = participants.length;
+    const participantCount = participants.length + 1; // +1 for self
 
     return (
         <div style={{
@@ -347,16 +318,17 @@ const Room = ({ socket, roomId, username, onLeave }) => {
                             border: '1px solid rgba(139, 92, 246, 0.3)'
                         }}>
                             <Shield size={18} style={{ color: '#a78bfa' }} />
-                            <span style={{ fontWeight: '800', fontSize: '14px', color: '#ddd6fe', letterSpacing: '0.02em' }}>{roomId.toUpperCase()}</span>
+                            <span style={{ fontWeight: '800', fontSize: '14px', color: '#ddd6fe', letterSpacing: '0.02em' }}>
+                                {roomName ? roomName.toUpperCase() : roomId.toUpperCase()}
+                            </span>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 10px #10b981' }}></div>
-                            <span style={{ fontSize: '12px', fontWeight: '800', color: '#34d399', textTransform: 'uppercase' }}>
-                                {participantCount} ONLINE
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: status === 'Live' ? '#10b981' : '#f59e0b', boxShadow: status === 'Live' ? '0 0 10px #10b981' : 'none' }}></div>
+                            <span style={{ fontSize: '12px', fontWeight: '800', color: status === 'Live' ? '#34d399' : '#fbbf24', textTransform: 'uppercase' }}>
+                                {participantCount} {status === 'Live' ? 'ONLINE' : status.toUpperCase()}
                             </span>
                         </div>
-                        <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{status}</span>
                     </div>
 
                     <button

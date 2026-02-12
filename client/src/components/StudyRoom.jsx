@@ -6,6 +6,7 @@ const StudyRoom = ({ socket, roomId, roomName, username, onLeave }) => {
         <Room
             socket={socket}
             roomId={roomId}
+            roomName={roomName}
             username={username}
             onLeave={onLeave}
         />

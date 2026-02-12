@@ -45,5 +45,3 @@ const usePeer = (socket, roomId, username) => {
 };
 
 export default usePeer;
-
-//bMAcUFfCNrhyXD0u
