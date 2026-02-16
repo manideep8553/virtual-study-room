@@ -5,7 +5,7 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
     const [rooms, setRooms] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [newRoom, setNewRoom] = useState({ name: '', description: '', tag: 'Academic' });
+    const [newRoom, setNewRoom] = useState({ name: '', description: '', tag: 'Academic', roomKey: '' });
 
     useEffect(() => {
         // Initial Fetch
@@ -70,10 +70,10 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
         };
 
         // Persist to MongoDB through socket
-        socket.emit('create_room', roomData);
+        socket.emit('create_room', { ...roomData, roomKey: newRoom.roomKey });
 
         setIsCreateModalOpen(false);
-        setNewRoom({ name: '', description: '', tag: 'Academic' });
+        setNewRoom({ name: '', description: '', tag: 'Academic', roomKey: '' });
 
         // Join the newly created room (it will trigger on the server)
         onJoinRoom(roomId, newRoom.name);
@@ -173,7 +173,18 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
                     <div
                         key={room.id}
                         className="room-card"
-                        onClick={() => onJoinRoom(room.id, room.name)}
+                        onClick={() => {
+                            if (room.roomKey) {
+                                const key = prompt("This is a private room. Please enter the Room Key:");
+                                if (key === room.roomKey) {
+                                    onJoinRoom(room.id, room.name);
+                                } else if (key !== null) {
+                                    alert("Incorrect Room Key!");
+                                }
+                            } else {
+                                onJoinRoom(room.id, room.name);
+                            }
+                        }}
                         style={{
                             background: 'white',
                             border: '1px solid #e2e8f0',
@@ -408,6 +419,24 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
                                         >{t}</button>
                                     ))}
                                 </div>
+                            </div>
+
+                            <div style={{ marginBottom: '20px' }}>
+                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>Room Key (Optional)</label>
+                                <input
+                                    type="text"
+                                    placeholder="Set a secret key to make room private"
+                                    value={newRoom.roomKey}
+                                    onChange={(e) => setNewRoom({ ...newRoom, roomKey: e.target.value })}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 16px',
+                                        borderRadius: '12px',
+                                        border: '2px solid #f1f5f9',
+                                        fontSize: '14px',
+                                        outline: 'none'
+                                    }}
+                                />
                             </div>
 
                             <div style={{ display: 'flex', gap: '16px', marginTop: '12px' }}>

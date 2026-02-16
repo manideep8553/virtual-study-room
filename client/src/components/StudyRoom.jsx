@@ -1,7 +1,7 @@
 import React from 'react';
 import Room from './Room';
 
-const StudyRoom = ({ socket, roomId, roomName, username, onLeave }) => {
+const StudyRoom = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     return (
         <Room
             socket={socket}
@@ -9,6 +9,7 @@ const StudyRoom = ({ socket, roomId, roomName, username, onLeave }) => {
             roomName={roomName}
             username={username}
             onLeave={onLeave}
+            onRename={onRename}
         />
     );
 };

@@ -5,7 +5,7 @@ import Chat from './Chat';
 import PomodoroTimer from './PomodoroTimer';
 import Resources from './Resources';
 
-const Room = ({ socket, roomId, roomName, username, onLeave }) => {
+const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     // State
     const [myStream, setMyStream] = useState(null);
     const [participants, setParticipants] = useState([]);
@@ -13,6 +13,8 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
     const [isMicOn, setIsMicOn] = useState(true);
     const [isVidOn, setIsVidOn] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(false);
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [newName, setNewName] = useState(username);
     const [showSidePanel, setShowSidePanel] = useState(window.innerWidth > 768);
     const [activeTab, setActiveTab] = useState('chat');
     const [status, setStatus] = useState('Connecting...');
@@ -33,8 +35,16 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
             try {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({
-                        video: true,
-                        audio: true
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            facingMode: 'user'
+                        },
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
                     });
                     if (!isMounted) {
                         stream.getTracks().forEach(track => track.stop());
@@ -134,13 +144,14 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                                         const filtered = Object.fromEntries(
                                             Object.entries(prev).filter(([id, data]) => data.username !== person.username)
                                         );
+                                        const personData = participants.find(p => p.peerId === person.peerId);
                                         return {
                                             ...filtered,
                                             [person.peerId]: {
                                                 stream: remoteStream,
                                                 username: person.username,
-                                                isVideoOn: true,
-                                                isMicOn: true
+                                                isVideoOn: personData ? personData.isVideoOn : true,
+                                                isMicOn: personData ? personData.isMicOn : true
                                             }
                                         };
                                     });
@@ -159,7 +170,8 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                 });
 
                 socket.on('room_update', ({ participants: allParticipants }) => {
-                    setParticipants(allParticipants);
+                    const others = allParticipants.filter(p => p.peerId !== peerRef.current?.id);
+                    setParticipants(others);
                 });
 
                 socket.on('participant_left', (peerId) => {
@@ -172,17 +184,27 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                         callsRef.current[peerId].close();
                         delete callsRef.current[peerId];
                     }
-                    if (peersRef.current[peerId]) peersRef.current[peerId].close();
                     setParticipants((prev) => prev.filter(p => p.peerId !== peerId));
                 });
 
-                socket.on('media_toggled', ({ peerId, type, status }) => {
+                socket.on('media_status_changed', ({ peerId, type, status }) => {
                     setParticipants(prev => prev.map(p => {
                         if (p.peerId === peerId) {
-                            return type === 'audio' ? { ...p, isMuted: !status } : { ...p, isVidOn: status };
+                            return type === 'audio' ? { ...p, isMicOn: status } : { ...p, isVideoOn: status };
                         }
                         return p;
                     }));
+
+                    setRemoteStreams(prev => {
+                        if (!prev[peerId]) return prev;
+                        return {
+                            ...prev,
+                            [peerId]: {
+                                ...prev[peerId],
+                                [type === 'audio' ? 'isMicOn' : 'isVideoOn']: status
+                            }
+                        };
+                    });
                 });
 
             } catch (err) {
@@ -317,15 +339,46 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                             border: '1px solid rgba(139, 92, 246, 0.3)'
                         }}>
                             <Shield size={18} style={{ color: '#a78bfa' }} />
-                            <span style={{ fontWeight: '800', fontSize: '14px', color: '#ddd6fe', letterSpacing: '0.02em' }}>
-                                {roomName ? roomName.toUpperCase() : roomId.toUpperCase()}
-                            </span>
+                            {isRenaming ? (
+                                <input
+                                    autoFocus
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    onBlur={() => {
+                                        setIsRenaming(false);
+                                        if (newName !== username) onRename(newName);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            setIsRenaming(false);
+                                            if (newName !== username) onRename(newName);
+                                        }
+                                    }}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        borderBottom: '1px solid #a78bfa',
+                                        color: 'white',
+                                        fontWeight: '800',
+                                        fontSize: '14px',
+                                        outline: 'none',
+                                        width: '100px'
+                                    }}
+                                />
+                            ) : (
+                                <span
+                                    onClick={() => setIsRenaming(true)}
+                                    title="Click to rename yourself"
+                                    style={{ fontWeight: '800', fontSize: '14px', color: '#ddd6fe', letterSpacing: '0.02em', cursor: 'pointer' }}>
+                                    {roomName ? roomName.toUpperCase() : roomId.toUpperCase()}
+                                </span>
+                            )}
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
                             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: status === 'Live' ? '#10b981' : '#f59e0b', boxShadow: status === 'Live' ? '0 0 10px #10b981' : 'none' }}></div>
                             <span style={{ fontSize: '12px', fontWeight: '800', color: status === 'Live' ? '#34d399' : '#fbbf24', textTransform: 'uppercase' }}>
-                                {participantCount} {status === 'Live' ? 'ONLINE' : status.toUpperCase()}
+                                {participants.length + 1} ONLINE
                             </span>
                         </div>
                     </div>
@@ -364,18 +417,19 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                 }}>
                     <div className="video-grid">
                         {/* My Video Cell */}
-                        <div className="video-cell" style={{
+                        <div className="video-cell self-video" style={{
                             position: 'relative',
-                            background: '#000',
-                            borderRadius: '24px',
+                            background: '#0a0a0a',
+                            borderRadius: '20px',
                             overflow: 'hidden',
-                            aspectRatio: participantCount === 1 ? '4/3' : '16/9', // Better for solo camera
-                            boxShadow: '0 30px 60px rgba(0,0,0,0.5)',
-                            border: '2px solid rgba(139, 92, 246, 0.4)',
+                            boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
+                            border: '2px solid rgba(139, 92, 246, 0.5)',
                             animation: 'fadeInUp 0.6s ease-out',
-                            maxHeight: '75vh',
-                            margin: '0 auto',
-                            width: '100%'
+                            width: '100%',
+                            height: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                         }}>
                             <video
                                 ref={myVideoRef}
@@ -457,17 +511,18 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
 
                         {/* Remote Video Cells */}
                         {Object.entries(remoteStreams)
-                            .filter(([id]) => id !== peerRef.current?.id) // Strictly filter out myself
+                            .filter(([id]) => id !== peerRef.current?.id)
                             .map(([peerId, data]) => (
                                 <div key={peerId} className="video-cell" style={{
                                     position: 'relative',
-                                    background: '#1e293b',
-                                    borderRadius: '24px',
+                                    background: '#0a0a0a',
+                                    borderRadius: '20px',
                                     overflow: 'hidden',
-                                    aspectRatio: '16/9',
-                                    boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+                                    boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
                                     border: '2px solid rgba(255, 255, 255, 0.05)',
-                                    animation: 'fadeInUp 0.6s ease-out'
+                                    animation: 'fadeInUp 0.6s ease-out',
+                                    width: '100%',
+                                    height: '100%'
                                 }}>
                                     {data.isVideoOn ? (
                                         <VideoPlayer stream={data.stream} />
@@ -532,34 +587,36 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                                 </div>
                             ))}
 
-                        {/* Connecting Slots - Only show if there are actual people connecting */}
-                        {participants.length > 1 && participants.filter(p => p.peerId !== peerRef.current?.id && !remoteStreams[p.peerId]).map(p => (
-                            <div key={p.peerId} style={{
+                        {/* Connecting Slots */}
+                        {participants.filter(p => !remoteStreams[p.peerId]).map(p => (
+                            <div key={p.peerId} className="video-cell connecting" style={{
                                 position: 'relative',
-                                background: 'rgba(30, 41, 59, 0.5)',
-                                borderRadius: '24px',
+                                background: 'rgba(30, 41, 59, 0.4)',
+                                borderRadius: '20px',
                                 overflow: 'hidden',
                                 border: '2px dashed rgba(255, 255, 255, 0.1)',
-                                aspectRatio: '16/9',
                                 display: 'flex',
                                 alignItems: 'center',
-                                justifyContent: 'center'
+                                justifyContent: 'center',
+                                width: '100%',
+                                height: '100%'
                             }}>
                                 <div style={{ textAlign: 'center' }}>
                                     <div style={{
-                                        width: '60px',
-                                        height: '60px',
+                                        width: '64px',
+                                        height: '64px',
                                         borderRadius: '50%',
                                         background: 'rgba(255, 255, 255, 0.05)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        margin: '0 auto 16px'
+                                        margin: '0 auto 16px',
+                                        border: '1px solid rgba(255,255,255,0.1)'
                                     }}>
-                                        <Users size={24} style={{ color: '#475569' }} />
+                                        <Users size={28} style={{ color: '#64748b' }} />
                                     </div>
                                     <div style={{ color: '#f8fafc', fontWeight: '800', fontSize: '15px', marginBottom: '4px' }}>{p.username}</div>
-                                    <div style={{ color: '#64748b', fontSize: '11px', fontWeight: '800', letterSpacing: '0.2em', textTransform: 'uppercase' }}>Connecting...</div>
+                                    <div style={{ color: '#64748b', fontSize: '11px', fontWeight: '800', letterSpacing: '0.2em', textTransform: 'uppercase' }}>Establishing Link...</div>
                                 </div>
                             </div>
                         ))}
@@ -923,30 +980,37 @@ const Room = ({ socket, roomId, roomName, username, onLeave }) => {
                     gap: 16px;
                     width: 100%;
                     height: 100%;
+                    max-height: calc(100vh - 100px);
                     padding: 16px;
                     box-sizing: border-box;
                     align-content: center;
                     justify-content: center;
-                    grid-template-columns: ${participantCount === 1 ? 'minmax(300px, 800px)' :
+                    margin: 0 auto;
+                    grid-template-columns: ${participantCount === 1 ? 'minmax(400px, 80% )' :
                     participantCount === 2 ? 'repeat(2, 1fr)' :
-                        'repeat(auto-fit, minmax(400px, 1fr))'};
+                        participantCount <= 4 ? 'repeat(2, 1fr)' :
+                            'repeat(auto-fit, minmax(360px, 1fr))'};
                     grid-auto-rows: ${participantCount <= 2 ? '1fr' : 'auto'};
                 }
 
                 .video-cell {
                     background: #111827;
-                    border-radius: 12px;
+                    border-radius: 20px;
                     overflow: hidden;
                     position: relative;
                     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
                     border: 2px solid rgba(255, 255, 255, 0.05);
                     width: 100%;
                     height: 100%;
-                    min-height: 200px;
+                    aspect-ratio: 16/9;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    aspect-ratio: 16/9;
+                    transition: all 0.3s ease;
+                }
+
+                .video-cell.self-video {
+                    border-color: rgba(139, 92, 246, 0.4);
                 }
 
                 .video-cell video {

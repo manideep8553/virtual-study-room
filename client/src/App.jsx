@@ -18,10 +18,17 @@ function App() {
 
   const [showProfile, setShowProfile] = useState(false);
 
-  // Auto-login for dev if needed (keeping it off for production feel)
+  // Auto-login persistence
   useEffect(() => {
+    const savedUser = localStorage.getItem('vstudy_user');
+    if (savedUser) {
+      const user = JSON.parse(savedUser);
+      socket.emit('register_user', { email: user.email, mode: 'login' });
+    }
+
     const handleUserRegistered = (user) => {
       console.log(" Auth Success! Logged in as:", user.name);
+      localStorage.setItem('vstudy_user', JSON.stringify(user));
       setCurrentUser(user);
       setIsLoggedIn(true);
       setCurrentPage('rooms');
@@ -32,7 +39,6 @@ function App() {
     // Connection Debugging
     socket.on('connect_error', (err) => {
       console.error("Socket Connection Error:", err.message);
-      // alert("Network connection failed. Please check your server or IP."); 
     });
 
     socket.on('connect', () => {
@@ -62,11 +68,21 @@ function App() {
   }, []);
 
   const handleLogout = () => {
+    localStorage.removeItem('vstudy_user');
     setIsLoggedIn(false);
     setCurrentUser(null);
     setCurrentPage('rooms');
     setAuthMode('login');
     setShowProfile(false);
+  };
+
+  const handleRename = (newName) => {
+    if (!newName || !currentUser) return;
+    socket.emit('update_username', {
+      userId: currentUser._id,
+      newName,
+      roomId: currentRoom?.id
+    });
   };
 
   const handleJoinRoom = (roomId, roomName) => {
@@ -94,6 +110,7 @@ function App() {
         roomName={currentRoom.name}
         username={currentUser.name}
         onLeave={handleLeaveRoom}
+        onRename={handleRename}
       />
     );
   }

@@ -31,6 +31,7 @@ const roomSchema = new mongoose.Schema({
   name: String,
   description: String,
   tag: String,
+  roomKey: String, // Dynamic key for joining rooms
   participants: [{
     socketId: String,
     username: String,
@@ -275,11 +276,36 @@ io.on('connection', (socket) => {
   socket.on('create_room', async (roomData) => {
     console.log(`Creating room: ${roomData.name}`);
     try {
+      // Ensure we include roomKey if provided
       await RoomModel.create(roomData);
       // Notify everyone about the new room
       io.emit('room_created', roomData);
     } catch (err) {
       console.log('Error creating room:', err);
+    }
+  });
+
+  socket.on('update_username', async ({ userId, newName, roomId }) => {
+    try {
+      // Update in DB
+      await UserModel.findByIdAndUpdate(userId, { name: newName });
+
+      // Update in active memory if in a room
+      if (roomId && activeParticipants.has(roomId)) {
+        const participants = activeParticipants.get(roomId);
+        const pArray = Array.from(participants);
+        const updatedArray = pArray.map(p =>
+          p.socketId === socket.id ? { ...p, username: newName } : p
+        );
+        activeParticipants.set(roomId, new Set(updatedArray));
+        broadcastRoomUpdate(roomId);
+      }
+
+      // Notify the requester
+      const user = await UserModel.findById(userId);
+      socket.emit('user_registered', user);
+    } catch (err) {
+      console.log('Error updating username:', err);
     }
   });
 
