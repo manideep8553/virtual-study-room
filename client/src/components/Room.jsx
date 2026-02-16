@@ -34,19 +34,29 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 if (AudioContext) {
                     audioContextRef.current = new AudioContext();
-                    console.log("[Audio] Context initialized");
                 }
             }
             if (audioContextRef.current?.state === 'suspended') {
                 audioContextRef.current.resume();
-                console.log("[Audio] Context resumed");
+            }
+            // Keep-alive heartbeat: Play a tiny silent oscillation to keep hardware active
+            const osc = audioContextRef.current?.createOscillator();
+            const gain = audioContextRef.current?.createGain();
+            if (osc && gain) {
+                gain.gain.value = 0.0001; // Inaudible
+                osc.connect(gain);
+                gain.connect(audioContextRef.current.destination);
+                osc.start();
+                setTimeout(() => osc.stop(), 100);
             }
         };
         window.addEventListener('click', unlockAudio);
         window.addEventListener('touchstart', unlockAudio);
+        const interval = setInterval(unlockAudio, 20000); // Periodic keep-alive
         return () => {
             window.removeEventListener('click', unlockAudio);
             window.removeEventListener('touchstart', unlockAudio);
+            clearInterval(interval);
         };
     }, []);
 
@@ -120,10 +130,10 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     const callerPeerId = call.peer;
                     const callerUsername = call.metadata?.username || 'Peer';
 
-                    console.log(`Receiving call from ${callerUsername} (${callerPeerId})`);
+                    console.log(`[Call] Incoming from ${callerUsername}. Tracks:`, myMediaStream?.getTracks().length);
 
                     call.on('stream', (remoteStream) => {
-                        console.log(`[Stream] Received from: ${callerUsername} (${callerPeerId})`);
+                        console.log(`[Stream] Received from: ${callerUsername}. Audio tracks: ${remoteStream.getAudioTracks().length}`);
                         setRemoteStreams(prev => ({
                             ...prev,
                             [callerPeerId]: {
@@ -145,7 +155,18 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     });
 
                     callsRef.current[callerPeerId] = call;
-                    call.answer(myMediaStream);
+
+                    // Critical: Answer with the stream only if it's ready, or Wait
+                    const answerWithRetry = (attempts = 0) => {
+                        if (myMediaStream && myMediaStream.getTracks().length > 0) {
+                            call.answer(myMediaStream);
+                        } else if (attempts < 5) {
+                            setTimeout(() => answerWithRetry(attempts + 1), 500);
+                        } else {
+                            call.answer(new MediaStream()); // Fallback
+                        }
+                    };
+                    answerWithRetry();
                 });
 
                 // 4. Socket events
@@ -631,22 +652,24 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     width: 1px;
                     height: 24px;
                     background: rgba(255, 255, 255, 0.1);
-                    margin: 0 8px;
+                    margin: 0 4px;
                 }
 
                 @media (max-width: 768px) {
                     .video-grid { grid-template-columns: 1fr !important; }
                     .video-cell { aspect-ratio: 16/9; height: auto; }
-                    .control-btn { width: 42px; height: 42px; }
-                    .control-btn.hangup { padding: 0 15px; }
+                    .control-btn { width: 40px; height: 40px; }
+                    .control-btn svg { width: 18px; height: 18px; }
+                    .control-btn.hangup { padding: 0 12px; }
                     .floating-controls { 
-                        padding: 8px 12px !important; 
-                        gap: 6px !important;
-                        bottom: 16px !important;
+                        padding: 6px 10px !important; 
+                        gap: 4px !important;
+                        bottom: 12px !important;
                         width: auto;
-                        max-width: 95%;
+                        max-width: 98%;
                         justify-content: center;
                     }
+                    .control-divider { margin: 0 2px; }
                 }
 
                 ::-webkit-scrollbar { width: 4px; }
