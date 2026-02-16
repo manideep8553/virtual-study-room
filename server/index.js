@@ -298,6 +298,14 @@ io.on('connection', (socket) => {
           p.socketId === socket.id ? { ...p, username: newName } : p
         );
         activeParticipants.set(roomId, new Set(updatedArray));
+
+        // Broadcast the name change specifically
+        io.to(roomId).emit('nickname_changed', {
+          socketId: socket.id,
+          peerId: socket.peerId,
+          newName: newName
+        });
+
         broadcastRoomUpdate(roomId);
       }
 

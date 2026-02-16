@@ -199,6 +199,19 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     });
                 });
 
+                socket.on('nickname_changed', ({ peerId, newName }) => {
+                    setRemoteStreams(prev => {
+                        if (!prev[peerId]) return prev;
+                        return {
+                            ...prev,
+                            [peerId]: { ...prev[peerId], username: newName }
+                        };
+                    });
+                    setParticipants(prev => prev.map(p =>
+                        p.peerId === peerId ? { ...p, username: newName } : p
+                    ));
+                });
+
             } catch (err) {
                 console.error('Core Init Error:', err);
                 setStatus('Failed to load');
@@ -211,8 +224,15 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
 
         return () => {
             isMounted = false;
-            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+            console.log("Cleaning up room...");
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(t => {
+                    t.stop();
+                    console.log(`Stopped track: ${t.kind}`);
+                });
+            }
             if (peer) peer.destroy();
+            socket.off('nickname_changed');
             socket.emit('leave_room', roomId);
         };
     }, [roomId, username, socket]);
@@ -594,24 +614,41 @@ const VideoPlayer = ({ stream }) => {
     useEffect(() => {
         const video = videoRef.current;
         if (video && stream) {
+            console.log("[VideoPlayer] Attaching stream. Tracks:", stream.getTracks().map(t => `${t.kind}:${t.enabled}`));
+
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length === 0) {
+                console.warn("[VideoPlayer] No audio tracks found in stream!");
+            } else {
+                console.log(`[VideoPlayer] Found ${audioTracks.length} audio tracks.`);
+                audioTracks.forEach(t => t.enabled = true);
+            }
+
             video.srcObject = stream;
 
             const handlePlay = () => {
                 video.play().catch(e => {
-                    console.log("Autoplay blocked:", e);
+                    console.warn("[VideoPlayer] Autoplay blocked or failed:", e);
                     setNeedsInteraction(true);
                 });
             };
 
             if (video.readyState >= 1) handlePlay();
             else video.onloadedmetadata = handlePlay;
+
+            // Re-attempt play if tracks are added/changed
+            stream.onaddtrack = handlePlay;
         }
     }, [stream]);
 
     const forcePlay = () => {
         if (videoRef.current) {
-            videoRef.current.play();
-            setNeedsInteraction(false);
+            videoRef.current.play().then(() => {
+                setNeedsInteraction(false);
+                console.log("[VideoPlayer] Playback resumed after interaction");
+            }).catch(err => {
+                console.error("[VideoPlayer] Failed to force play:", err);
+            });
         }
     };
 
@@ -628,15 +665,19 @@ const VideoPlayer = ({ stream }) => {
                 <div style={{
                     position: 'absolute',
                     inset: 0,
-                    background: 'rgba(0,0,0,0.6)',
+                    background: 'rgba(0,0,0,0.7)',
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    zIndex: 2,
-                    cursor: 'pointer'
+                    zIndex: 20,
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    padding: '20px'
                 }}>
-                    <div style={{ background: '#8b5cf6', padding: '8px 16px', borderRadius: '8px', color: 'white', fontSize: '12px', fontWeight: 'bold' }}>
-                        CLICK TO ENABLE AUDIO
+                    <div style={{ background: '#8b5cf6', padding: '12px 24px', borderRadius: '12px', color: 'white', fontSize: '14px', fontWeight: 'bold', boxShadow: '0 10px 20px rgba(0,0,0,0.3)' }}>
+                        <div style={{ marginBottom: '8px' }}>AUDIO BLOCKED BY BROWSER</div>
+                        <div style={{ fontSize: '12px', opacity: 0.8 }}>CLICK ANYWHERE TO UNMUTE</div>
                     </div>
                 </div>
             )}
