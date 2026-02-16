@@ -96,26 +96,22 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     const callerPeerId = call.peer;
                     const callerUsername = call.metadata?.username || 'Peer';
 
-                    // Register stream handler BEFORE answering to ensure no events are missed
+                    console.log(`Receiving call from ${callerUsername} (${callerPeerId})`);
+
                     call.on('stream', (remoteStream) => {
-                        console.log(`Incoming stream from ${callerUsername} (${callerPeerId})`);
-                        setRemoteStreams(prev => {
-                            // Deduplicate by username: Remove any old streams for the same user
-                            const filtered = Object.fromEntries(
-                                Object.entries(prev).filter(([id, data]) => data.username !== callerUsername)
-                            );
-                            return {
-                                ...filtered,
-                                [callerPeerId]: {
-                                    stream: remoteStream,
-                                    username: callerUsername,
-                                    isVideoOn: true,
-                                    isMicOn: true
-                                }
-                            };
-                        });
+                        console.log(`[Stream] Received from: ${callerUsername} (${callerPeerId})`);
+                        setRemoteStreams(prev => ({
+                            ...prev,
+                            [callerPeerId]: {
+                                stream: remoteStream,
+                                username: callerUsername,
+                                isVideoOn: call.metadata?.isVideoOn !== false,
+                                isMicOn: call.metadata?.isMicOn !== false
+                            }
+                        }));
                     });
 
+                    call.on('error', (err) => console.error("Call error:", err));
                     call.on('close', () => {
                         setRemoteStreams(prev => {
                             const updated = { ...prev };
@@ -125,37 +121,33 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     });
 
                     callsRef.current[callerPeerId] = call;
-
-                    // Answer the call after setting up listeners
                     call.answer(myMediaStream);
                 });
 
                 // 4. Socket events
                 socket.on('existing_participants', (existingPeople) => {
+                    console.log("Calling existing participants:", existingPeople.length);
                     existingPeople.forEach((person, idx) => {
                         setTimeout(() => {
+                            console.log(`Calling ${person.username}...`);
                             const call = peer.call(person.peerId, myMediaStream, {
-                                metadata: { username }
+                                metadata: { username, isVideoOn: isVidOn, isMicOn: isMicOn }
                             });
+
                             if (call) {
                                 call.on('stream', (remoteStream) => {
-                                    setRemoteStreams(prev => {
-                                        // Deduplicate by username: Remove any old streams for the same user
-                                        const filtered = Object.fromEntries(
-                                            Object.entries(prev).filter(([id, data]) => data.username !== person.username)
-                                        );
-                                        const personData = participants.find(p => p.peerId === person.peerId);
-                                        return {
-                                            ...filtered,
-                                            [person.peerId]: {
-                                                stream: remoteStream,
-                                                username: person.username,
-                                                isVideoOn: personData ? personData.isVideoOn : true,
-                                                isMicOn: personData ? personData.isMicOn : true
-                                            }
-                                        };
-                                    });
+                                    console.log(`[Stream] Connected to: ${person.username}`);
+                                    setRemoteStreams(prev => ({
+                                        ...prev,
+                                        [person.peerId]: {
+                                            stream: remoteStream,
+                                            username: person.username,
+                                            isVideoOn: person.isVideoOn !== false,
+                                            isMicOn: person.isMicOn !== false
+                                        }
+                                    }));
                                 });
+                                call.on('error', (err) => console.error("Peer call error:", err));
                                 call.on('close', () => {
                                     setRemoteStreams(prev => {
                                         const updated = { ...prev };
@@ -165,7 +157,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                                 });
                                 callsRef.current[person.peerId] = call;
                             }
-                        }, idx * 300);
+                        }, idx * 400);
                     });
                 });
 
@@ -303,770 +295,294 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
         }
     };
 
-    const participantCount = participants.length + 1; // +1 for self
+    const participantCount = Object.keys(remoteStreams).length + 1;
 
     return (
         <div style={{
-            display: 'flex',
-            height: '100vh',
-            width: '100%',
-            background: '#0f172a',
-            color: '#f8fafc',
+            position: 'fixed',
+            inset: 0,
+            background: '#000',
+            color: '#fff',
+            fontFamily: "'Inter', sans-serif",
             overflow: 'hidden',
-            fontFamily: "'Plus Jakarta Sans', sans-serif"
+            display: 'flex'
         }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-                {/* Premium Header */}
-                <header style={{
-                    height: '72px',
+            <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                {/* Minimal Overlay Header */}
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    padding: '24px 32px',
+                    background: 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%)',
+                    zIndex: 100,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '0 32px',
-                    background: 'rgba(15, 23, 42, 0.8)',
-                    backdropFilter: 'blur(12px)',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                    zIndex: 10
+                    pointerEvents: 'none'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            background: 'rgba(139, 92, 246, 0.15)',
-                            padding: '8px 16px',
-                            borderRadius: '12px',
-                            border: '1px solid rgba(139, 92, 246, 0.3)'
-                        }}>
-                            <Shield size={18} style={{ color: '#a78bfa' }} />
+                    <div style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ background: 'rgba(255,255,255,0.1)', padding: '8px 16px', borderRadius: '8px', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)' }}>
                             {isRenaming ? (
                                 <input
                                     autoFocus
                                     value={newName}
                                     onChange={(e) => setNewName(e.target.value)}
-                                    onBlur={() => {
-                                        setIsRenaming(false);
-                                        if (newName !== username) onRename(newName);
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            setIsRenaming(false);
-                                            if (newName !== username) onRename(newName);
-                                        }
-                                    }}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        borderBottom: '1px solid #a78bfa',
-                                        color: 'white',
-                                        fontWeight: '800',
-                                        fontSize: '14px',
-                                        outline: 'none',
-                                        width: '100px'
-                                    }}
+                                    onBlur={() => { setIsRenaming(false); if (newName !== username) onRename(newName); }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') { setIsRenaming(false); if (newName !== username) onRename(newName); } }}
+                                    style={{ background: 'transparent', border: 'none', color: 'white', fontWeight: '700', fontSize: '14px', outline: 'none', width: '120px' }}
                                 />
                             ) : (
-                                <span
-                                    onClick={() => setIsRenaming(true)}
-                                    title="Click to rename yourself"
-                                    style={{ fontWeight: '800', fontSize: '14px', color: '#ddd6fe', letterSpacing: '0.02em', cursor: 'pointer' }}>
+                                <span onClick={() => setIsRenaming(true)} style={{ fontWeight: '700', fontSize: '14px', letterSpacing: '0.02em', cursor: 'pointer' }}>
                                     {roomName ? roomName.toUpperCase() : roomId.toUpperCase()}
                                 </span>
                             )}
                         </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: status === 'Live' ? '#10b981' : '#f59e0b', boxShadow: status === 'Live' ? '0 0 10px #10b981' : 'none' }}></div>
-                            <span style={{ fontSize: '12px', fontWeight: '800', color: status === 'Live' ? '#34d399' : '#fbbf24', textTransform: 'uppercase' }}>
-                                {participants.length + 1} ONLINE
-                            </span>
+                        <div style={{ background: 'rgba(16, 185, 129, 0.2)', padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                            <span style={{ fontSize: '11px', fontWeight: '800', color: '#10b981' }}>{participantCount} LIVE</span>
                         </div>
                     </div>
+                </div>
 
-                    <button
-                        onClick={onLeave}
-                        style={{
-                            padding: '10px 24px',
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            color: '#f87171',
-                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                            borderRadius: '12px',
-                            fontSize: '14px',
-                            fontWeight: '800',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = 'white'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#f87171'; }}
-                    >
-                        <PhoneOff size={18} /> Leave Room
-                    </button>
-                </header>
-
-                {/* Video Grid */}
-                <main style={{
-                    flex: 1,
-                    padding: '20px',
-                    overflowY: 'auto',
-                    background: '#0f172a',
-                    display: 'block',
-                    position: 'relative'
-                }}>
-                    <div className="video-grid">
-                        {/* My Video Cell */}
-                        <div className="video-cell self-video" style={{
-                            position: 'relative',
-                            background: '#0a0a0a',
-                            borderRadius: '20px',
-                            overflow: 'hidden',
-                            boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
-                            border: '2px solid rgba(139, 92, 246, 0.5)',
-                            animation: 'fadeInUp 0.6s ease-out',
-                            width: '100%',
-                            height: '100%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}>
-                            <video
-                                ref={myVideoRef}
-                                autoPlay
-                                muted
-                                playsInline
-                                style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover', // Cover looks more professional like Zoom
-                                    transform: 'scaleX(-1)',
-                                    background: '#000'
-                                }}
-                            />
-                            {!isVidOn && (
-                                <div style={{
-                                    position: 'absolute',
-                                    inset: 0,
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-                                    gap: '16px'
-                                }}>
-                                    <div style={{
-                                        width: '100px',
-                                        height: '100px',
-                                        borderRadius: '50%',
-                                        background: 'rgba(139, 92, 246, 0.2)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        border: '2px solid rgba(139, 92, 246, 0.4)'
-                                    }}>
-                                        <span style={{ fontSize: '40px', fontWeight: '800', color: '#a78bfa' }}>
-                                            {username.charAt(0).toUpperCase()}
-                                        </span>
-                                    </div>
-                                    <span style={{ fontSize: '16px', fontWeight: '700', color: '#64748b' }}>Your Camera is Off</span>
-                                </div>
-                            )}
-                            <div style={{
-                                position: 'absolute',
-                                bottom: '16px',
-                                left: '16px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px'
-                            }}>
-                                <div style={{
-                                    background: 'rgba(15, 23, 42, 0.6)',
-                                    backdropFilter: 'blur(8px)',
-                                    padding: '6px 14px',
-                                    borderRadius: '10px',
-                                    color: 'white',
-                                    fontSize: '13px',
-                                    fontWeight: '700',
-                                    border: '1px solid rgba(255,255,255,0.1)'
-                                }}>
-                                    {username} (You)
-                                </div>
+                {/* ZOOM-STYLE VIDEO GRID */}
+                <div className="video-grid">
+                    {/* My Video */}
+                    <div className="video-cell self-video">
+                        <video
+                            ref={myVideoRef}
+                            autoPlay
+                            muted
+                            playsInline
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', background: '#000' }}
+                        />
+                        {!isVidOn && (
+                            <div className="camera-off-overlay">
+                                <div className="avatar">{username.charAt(0).toUpperCase()}</div>
+                                <span style={{ color: '#666', fontSize: '12px', marginTop: '12px', fontWeight: '600' }}>Camera Off</span>
                             </div>
-                            {!isMicOn && (
-                                <div style={{
-                                    position: 'absolute',
-                                    top: '16px',
-                                    right: '16px',
-                                    background: 'rgba(239, 68, 68, 0.8)',
-                                    backdropFilter: 'blur(8px)',
-                                    padding: '8px',
-                                    borderRadius: '50%',
-                                    boxShadow: '0 4px 12px rgba(239,68,68,0.3)'
-                                }}>
-                                    <MicOff size={16} style={{ color: 'white' }} />
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Remote Video Cells */}
-                        {Object.entries(remoteStreams)
-                            .filter(([id]) => id !== peerRef.current?.id)
-                            .map(([peerId, data]) => (
-                                <div key={peerId} className="video-cell" style={{
-                                    position: 'relative',
-                                    background: '#0a0a0a',
-                                    borderRadius: '20px',
-                                    overflow: 'hidden',
-                                    boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
-                                    border: '2px solid rgba(255, 255, 255, 0.05)',
-                                    animation: 'fadeInUp 0.6s ease-out',
-                                    width: '100%',
-                                    height: '100%'
-                                }}>
-                                    {data.isVideoOn ? (
-                                        <VideoPlayer stream={data.stream} />
-                                    ) : (
-                                        <div style={{
-                                            width: '100%',
-                                            height: '100%',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-                                            gap: '16px'
-                                        }}>
-                                            <div style={{
-                                                width: '80px',
-                                                height: '80px',
-                                                borderRadius: '50%',
-                                                background: 'rgba(139, 92, 246, 0.2)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                border: '2px solid rgba(139, 92, 246, 0.3)'
-                                            }}>
-                                                <span style={{ fontSize: '32px', fontWeight: '800', color: '#a78bfa' }}>
-                                                    {data.username.charAt(0).toUpperCase()}
-                                                </span>
-                                            </div>
-                                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#64748b' }}>Camera Off</span>
-                                        </div>
-                                    )}
-                                    <div style={{
-                                        position: 'absolute',
-                                        bottom: '16px',
-                                        left: '16px',
-                                        background: 'rgba(15, 23, 42, 0.6)',
-                                        backdropFilter: 'blur(8px)',
-                                        padding: '6px 14px',
-                                        borderRadius: '10px',
-                                        color: 'white',
-                                        fontSize: '13px',
-                                        fontWeight: '700',
-                                        border: '1px solid rgba(255,255,255,0.1)'
-                                    }}>
-                                        {data.username}
-                                    </div>
-
-                                    {!data.isMicOn && (
-                                        <div style={{
-                                            position: 'absolute',
-                                            top: '16px',
-                                            right: '16px',
-                                            background: 'rgba(239, 68, 68, 0.8)',
-                                            backdropFilter: 'blur(8px)',
-                                            padding: '8px',
-                                            borderRadius: '50%',
-                                            boxShadow: '0 4px 12px rgba(239,68,68,0.3)'
-                                        }}>
-                                            <MicOff size={16} style={{ color: 'white' }} />
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-
-                        {/* Connecting Slots */}
-                        {participants.filter(p => !remoteStreams[p.peerId]).map(p => (
-                            <div key={p.peerId} className="video-cell connecting" style={{
-                                position: 'relative',
-                                background: 'rgba(30, 41, 59, 0.4)',
-                                borderRadius: '20px',
-                                overflow: 'hidden',
-                                border: '2px dashed rgba(255, 255, 255, 0.1)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: '100%',
-                                height: '100%'
-                            }}>
-                                <div style={{ textAlign: 'center' }}>
-                                    <div style={{
-                                        width: '64px',
-                                        height: '64px',
-                                        borderRadius: '50%',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        margin: '0 auto 16px',
-                                        border: '1px solid rgba(255,255,255,0.1)'
-                                    }}>
-                                        <Users size={28} style={{ color: '#64748b' }} />
-                                    </div>
-                                    <div style={{ color: '#f8fafc', fontWeight: '800', fontSize: '15px', marginBottom: '4px' }}>{p.username}</div>
-                                    <div style={{ color: '#64748b', fontSize: '11px', fontWeight: '800', letterSpacing: '0.2em', textTransform: 'uppercase' }}>Establishing Link...</div>
-                                </div>
-                            </div>
-                        ))}
+                        )}
+                        <div className="participant-tag">{username} (You)</div>
+                        {!isMicOn && <div className="mic-off-tag"><MicOff size={14} /></div>}
                     </div>
-                </main>
 
-                {/* Floating Controls */}
-                <footer style={{
+                    {/* Remote Videos */}
+                    {Object.entries(remoteStreams).map(([peerId, data]) => (
+                        <div key={peerId} className="video-cell">
+                            {data.isVideoOn ? (
+                                <VideoPlayer stream={data.stream} />
+                            ) : (
+                                <div className="camera-off-overlay">
+                                    <div className="avatar">{data.username?.charAt(0).toUpperCase()}</div>
+                                    <span style={{ color: '#666', fontSize: '12px', marginTop: '12px', fontWeight: '600' }}>Camera Off</span>
+                                </div>
+                            )}
+                            <div className="participant-tag">{data.username}</div>
+                            {!data.isMicOn && <div className="mic-off-tag"><MicOff size={14} /></div>}
+                        </div>
+                    ))}
+
+                    {/* Connecting Slots */}
+                    {participants.filter(p => !remoteStreams[p.peerId]).map(p => (
+                        <div key={p.peerId} className="video-cell connecting">
+                            <div style={{ textAlign: 'center' }}>
+                                <div className="avatar" style={{ margin: '0 auto 16px' }}>
+                                    <Users size={32} />
+                                </div>
+                                <div style={{ color: '#f8fafc', fontWeight: '700', fontSize: '14px' }}>{p.username}</div>
+                                <div style={{ color: '#444', fontSize: '10px', fontWeight: '700', marginTop: '4px', textTransform: 'uppercase' }}>Connecting...</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* FLOATING CONTROLS */}
+                <div style={{
                     position: 'absolute',
                     bottom: '32px',
                     left: '50%',
                     transform: 'translateX(-50%)',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '16px',
-                    background: 'rgba(15, 23, 42, 0.8)',
-                    backdropFilter: 'blur(16px)',
+                    gap: '12px',
                     padding: '12px 24px',
-                    borderRadius: '24px',
+                    background: 'rgba(20, 20, 20, 0.85)',
+                    backdropFilter: 'blur(20px)',
+                    borderRadius: '100px',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
-                    boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
-                    zIndex: 20
+                    boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
+                    zIndex: 200
                 }}>
-                    <button
-                        onClick={toggleMic}
-                        title={isMicOn ? "Turn Off Microphone" : "Turn On Microphone"}
-                        style={{
-                            width: '52px',
-                            height: '52px',
-                            borderRadius: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.2s',
-                            cursor: 'pointer',
-                            background: isMicOn ? 'rgba(255, 255, 255, 0.05)' : '#ef4444',
-                            border: '1px solid',
-                            borderColor: isMicOn ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                            color: 'white'
-                        }}
-                        onMouseEnter={e => { if (isMicOn) e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
-                        onMouseLeave={e => { if (isMicOn) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-                    >
-                        {isMicOn ? <Mic size={22} /> : <MicOff size={22} />}
+                    <button onClick={toggleMic} className={`control-btn ${!isMicOn ? 'off' : ''}`} title="Mute/Unmute">
+                        {isMicOn ? <Mic size={20} /> : <MicOff size={20} />}
+                    </button>
+                    <button onClick={toggleVideo} className={`control-btn ${!isVidOn ? 'off' : ''}`} title="Camera On/Off">
+                        {isVidOn ? <Video size={20} /> : <VideoOff size={20} />}
                     </button>
 
-                    <button
-                        onClick={toggleVideo}
-                        title={isVidOn ? "Turn Off Camera" : "Turn On Camera"}
-                        style={{
-                            width: '52px',
-                            height: '52px',
-                            borderRadius: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.2s',
-                            cursor: 'pointer',
-                            background: isVidOn ? 'rgba(255, 255, 255, 0.05)' : '#ef4444',
-                            border: '1px solid',
-                            borderColor: isVidOn ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                            color: 'white'
-                        }}
-                        onMouseEnter={e => { if (isVidOn) e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
-                        onMouseLeave={e => { if (isVidOn) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-                    >
-                        {isVidOn ? <Video size={22} /> : <VideoOff size={22} />}
+                    <div style={{ width: '1px', height: '24px', background: 'rgba(255, 255, 255, 0.1)', margin: '0 8px' }}></div>
+
+                    <button onClick={() => { setActiveTab('chat'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'chat' ? 'active' : ''}`} title="Chat">
+                        <MessageSquare size={20} />
+                    </button>
+                    <button onClick={() => { setActiveTab('tools'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'tools' ? 'active' : ''}`} title="Focus Timer">
+                        <Timer size={20} />
+                    </button>
+                    <button onClick={() => { setActiveTab('share'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'share' ? 'active' : ''}`} title="Resources & Screen">
+                        <Monitor size={20} />
                     </button>
 
-                    <div style={{ width: '1px', height: '32px', background: 'rgba(255,255,255,0.1)', margin: '0 8px' }}></div>
-
-                    <button
-                        onClick={() => {
-                            if (showSidePanel && activeTab === 'chat') {
-                                setShowSidePanel(false);
-                            } else {
-                                setShowSidePanel(true);
-                                setActiveTab('chat');
-                            }
-                        }}
-                        title="Chat"
-                        style={{
-                            width: '52px',
-                            height: '52px',
-                            borderRadius: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.2s',
-                            cursor: 'pointer',
-                            background: showSidePanel && activeTab === 'chat' ? '#8b5cf6' : 'rgba(255, 255, 255, 0.05)',
-                            border: '1px solid',
-                            borderColor: showSidePanel && activeTab === 'chat' ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
-                            color: 'white',
-                            position: 'relative'
-                        }}
-                    >
-                        <MessageSquare size={22} />
-                        {!showSidePanel && <div style={{ position: 'absolute', top: '12px', right: '12px', width: '8px', height: '8px', background: '#8b5cf6', borderRadius: '50%', border: '2px solid #0f172a' }}></div>}
-                    </button>
-
-                    <button
-                        onClick={() => {
-                            if (showSidePanel && (activeTab === 'members' || activeTab === 'tools' || activeTab === 'share')) {
-                                setShowSidePanel(false);
-                            } else {
-                                setShowSidePanel(true);
-                                setActiveTab('members');
-                            }
-                        }}
-                        title="Options"
-                        style={{
-                            width: '52px',
-                            height: '52px',
-                            borderRadius: '16px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.2s',
-                            cursor: 'pointer',
-                            background: showSidePanel && (activeTab === 'members' || activeTab === 'tools' || activeTab === 'share') ? '#8b5cf6' : 'rgba(255, 255, 255, 0.05)',
-                            border: '1px solid',
-                            borderColor: showSidePanel && (activeTab === 'members' || activeTab === 'tools' || activeTab === 'share') ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
-                            color: 'white'
-                        }}
-                    >
-                        <LayoutGrid size={22} />
-                    </button>
-                </footer>
-            </div >
-
-            {/* Premium Side Panel */}
-            <div className="side-panel" style={{
-                width: '100%',
-                maxWidth: '400px',
-                height: '100%', // ensure full height on mobile
-                position: 'absolute', // Absolute positioning for overlay on mobile
-                right: 0,
-                top: 0,
-                background: 'rgba(15, 23, 42, 0.95)',
-                backdropFilter: 'blur(20px)',
-                borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
-                display: showSidePanel ? 'flex' : 'none', // Toggle display based on showSidePanel
-                flexDirection: 'column',
-                // Persistent transform based on showSidePanel state
-                transform: showSidePanel ? 'translateX(0)' : 'translateX(100%)',
-                transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                zIndex: 1000,
-                boxShadow: showSidePanel ? '-10px 0 40px rgba(0,0,0,0.5)' : 'none'
-            }}>
-                <div style={{
-                    padding: '20px 24px',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                }}>
-                    <span style={{ fontSize: '14px', fontWeight: '800', color: '#94a3b8' }}>
-                        {activeTab === 'chat' ? 'CHAT SESSION' : activeTab === 'members' ? 'ROOM MEMBERS' : activeTab === 'share' ? 'SHARING' : 'STUDY TOOLS'}
-                    </span>
-                    <button
-                        className="mobile-only"
-                        onClick={() => setShowSidePanel(false)}
-                        style={{
-                            background: 'rgba(255,255,255,0.05)',
-                            border: 'none',
-                            color: 'white',
-                            padding: '8px',
-                            borderRadius: '10px',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <path d="M18 6L6 18M6 6l12 12" />
-                        </svg>
+                    <button onClick={onLeave} className="control-btn hangup" title="Leave Room">
+                        <PhoneOff size={20} />
                     </button>
                 </div>
+            </div>
 
-                <div style={{ padding: '0 24px 24px' }}>
-                    <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.03)', padding: '6px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        {activeTab === 'chat' ? (
-                            <button
-                                style={{
-                                    flex: 1,
-                                    padding: '10px',
-                                    borderRadius: '12px',
-                                    fontSize: '12px',
-                                    fontWeight: '800',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s',
-                                    background: activeTab === 'chat' ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                                    color: activeTab === 'chat' ? '#a78bfa' : '#64748b'
-                                }}
-                            >CHAT</button>
-                        ) : (
-                            <>
-                                <button
-                                    onClick={() => setActiveTab('members')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px',
-                                        borderRadius: '12px',
-                                        fontSize: '11px',
-                                        fontWeight: '800',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        background: activeTab === 'members' ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                                        color: activeTab === 'members' ? '#a78bfa' : '#64748b'
-                                    }}
-                                >PEOPLE</button>
-                                <button
-                                    onClick={() => setActiveTab('tools')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px',
-                                        borderRadius: '12px',
-                                        fontSize: '11px',
-                                        fontWeight: '800',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        background: activeTab === 'tools' ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                                        color: activeTab === 'tools' ? '#a78bfa' : '#64748b'
-                                    }}
-                                >TOOLS</button>
-                                <button
-                                    onClick={() => setActiveTab('share')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px',
-                                        borderRadius: '12px',
-                                        fontSize: '11px',
-                                        fontWeight: '800',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        background: activeTab === 'share' ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                                        color: activeTab === 'share' ? '#a78bfa' : '#64748b'
-                                    }}
-                                >SHARE</button>
-                            </>
+            {/* Side Panel */}
+            {showSidePanel && (
+                <div style={{
+                    width: '380px',
+                    background: '#0f0f0f',
+                    borderLeft: '1px solid rgba(255,255,255,0.1)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    animation: 'slideInRight 0.3s ease-out',
+                    zIndex: 300
+                }}>
+                    <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: '700', textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.1em', color: '#888' }}>{activeTab}</span>
+                        <XCircle size={20} onClick={() => setShowSidePanel(false)} style={{ cursor: 'pointer', color: '#666' }} />
+                    </div>
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                        {activeTab === 'chat' && <Chat socket={socket} roomId={roomId} username={username} />}
+                        {activeTab === 'tools' && <div style={{ padding: '20px' }}><PomodoroTimer socket={socket} roomId={roomId} /></div>}
+                        {activeTab === 'share' && (
+                            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ padding: '20px' }}>
+                                    <button
+                                        onClick={handleScreenShare}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: isScreenSharing ? '#ef4444' : '#333', color: 'white', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                        {isScreenSharing ? <><XCircle size={18} /> Stop Sharing</> : <><Monitor size={18} /> Share Screen</>}
+                                    </button>
+                                </div>
+                                <div style={{ flex: 1, overflow: 'hidden' }}>
+                                    <Resources socket={socket} roomId={roomId} username={username} />
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>
-
-                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-                    {/* Chat Tab - Always Mounted, Hidden via Display */}
-                    <div style={{ display: activeTab === 'chat' ? 'flex' : 'none', height: '100%', flexDirection: 'column' }}>
-                        <Chat socket={socket} roomId={roomId} username={username} />
-                    </div>
-
-                    {/* Members Tab */}
-                    <div style={{ display: activeTab === 'members' ? 'flex' : 'none', height: '100%', flexDirection: 'column', padding: '24px', gap: '12px', overflowY: 'auto' }}>
-                        {participants.map(p => (
-                            <div key={p.peerId} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '16px',
-                                padding: '16px',
-                                background: 'rgba(255, 255, 255, 0.02)',
-                                borderRadius: '20px',
-                                border: '1px solid rgba(255, 255, 255, 0.05)'
-                            }}>
-                                <div style={{
-                                    width: '44px',
-                                    height: '44px',
-                                    borderRadius: '14px',
-                                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: 'white',
-                                    fontWeight: '800',
-                                    boxShadow: '0 8px 16px rgba(139, 92, 246, 0.2)'
-                                }}>
-                                    {p.username.charAt(0).toUpperCase()}
-                                </div>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#f8fafc' }}>
-                                        {p.username} {p.peerId === peerRef.current?.id && '(You)'}
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: remoteStreams[p.peerId] || p.peerId === peerRef.current?.id ? '#10b981' : '#f59e0b' }}></div>
-                                        <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>
-                                            {remoteStreams[p.peerId] || p.peerId === peerRef.current?.id ? 'Connected' : 'Connecting...'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Tools Tab */}
-                    <div style={{ display: activeTab === 'tools' ? 'flex' : 'none', height: '100%', flexDirection: 'column', overflowY: 'auto' }}>
-                        <div style={{ padding: '24px' }}>
-                            <div style={{ padding: '16px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '20px', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
-                                <PomodoroTimer socket={socket} roomId={roomId} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Share Tab */}
-                    <div style={{ display: activeTab === 'share' ? 'flex' : 'none', height: '100%', flexDirection: 'column', overflowY: 'auto' }}>
-                        <div style={{ padding: '24px' }}>
-                            <div style={{ padding: '20px', background: 'rgba(139, 92, 246, 0.05)', borderRadius: '20px', border: '1px solid rgba(139, 92, 246, 0.1)', marginBottom: '24px' }}>
-                                <h3 style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800', letterSpacing: '0.05em' }}>
-                                    <Monitor size={16} /> PRESENTATION
-                                </h3>
-                                <button
-                                    onClick={handleScreenShare}
-                                    style={{
-                                        width: '100%',
-                                        padding: '14px',
-                                        borderRadius: '14px',
-                                        border: 'none',
-                                        background: isScreenSharing ? '#ef4444' : '#8b5cf6',
-                                        color: 'white',
-                                        fontWeight: '700',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '10px',
-                                        fontSize: '14px',
-                                        transition: 'all 0.2s',
-                                        boxShadow: isScreenSharing ? '0 4px 12px rgba(239, 68, 68, 0.4)' : '0 4px 12px rgba(139, 92, 246, 0.3)'
-                                    }}
-                                >
-                                    {isScreenSharing ? (
-                                        <><XCircle size={18} /> Stop Sharing</>
-                                    ) : (
-                                        <><Monitor size={18} /> Share Screen</>
-                                    )}
-                                </button>
-                            </div>
-                            <div style={{ marginBottom: '8px' }}>
-                                <h3 style={{ fontSize: '12px', color: '#64748b', fontWeight: '800', letterSpacing: '0.1em' }}>SHARED RESOURCES</h3>
-                            </div>
-                        </div>
-                        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                            <Resources socket={socket} roomId={roomId} username={username} />
-                        </div>
-                    </div>
-                </div>
-            </div>
+            )}
 
             <style>{`
-                @keyframes fadeInUp {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                @keyframes slideInRight {
-                    from { transform: translateX(100%); }
-                    to { transform: translateX(0); }
-                }
+                @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
 
-                /* ZOOM-LIKE VIDEO GRID */
                 .video-grid {
                     display: grid;
-                    gap: 24px;
+                    gap: 2px;
                     width: 100%;
-                    min-height: 100%;
-                    padding: 24px;
-                    box-sizing: border-box;
-                    align-content: center;
-                    justify-content: center;
-                    margin: 0 auto;
-                    grid-template-columns: ${participantCount === 1 ? 'minmax(400px, 80% )' :
+                    height: 100vh;
+                    background: #000;
+                    grid-template-columns: ${participantCount === 1 ? '1fr' :
                     participantCount === 2 ? 'repeat(2, 1fr)' :
                         participantCount <= 4 ? 'repeat(2, 1fr)' :
                             'repeat(auto-fit, minmax(360px, 1fr))'};
-                    grid-auto-rows: ${participantCount <= 2 ? '1fr' : 'auto'};
+                    grid-auto-rows: ${participantCount <= 2 ? '1fr' : '1fr'};
                 }
 
                 .video-cell {
-                    background: #111827;
-                    border-radius: 20px;
-                    overflow: hidden;
                     position: relative;
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-                    border: 2px solid rgba(255, 255, 255, 0.05);
+                    background: #0a0a0a;
                     width: 100%;
                     height: 100%;
-                    aspect-ratio: 16/9;
+                    overflow: hidden;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    transition: all 0.3s ease;
                 }
 
-                .video-cell.self-video {
-                    border-color: rgba(139, 92, 246, 0.4);
+                .participant-tag {
+                    position: absolute;
+                    bottom: 12px;
+                    left: 12px;
+                    background: rgba(0, 0, 0, 0.4);
+                    padding: 4px 10px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: white;
+                    backdrop-filter: blur(8px);
+                    z-index: 10;
+                    border: 1px solid rgba(255,255,255,0.05);
                 }
 
-                .video-cell video {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover; /* Professional video apps use cover */
-                    background: #000;
+                .mic-off-tag {
+                    position: absolute;
+                    top: 12px;
+                    right: 12px;
+                    background: rgba(239, 68, 68, 0.9);
+                    padding: 4px;
+                    border-radius: 50%;
+                    z-index: 10;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                 }
+
+                .camera-off-overlay {
+                    position: absolute;
+                    inset: 0;
+                    background: #0a0a0a;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 5;
+                }
+
+                .avatar {
+                    width: 80px;
+                    height: 80px;
+                    border-radius: 50%;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 32px;
+                    font-weight: 700;
+                    color: #555;
+                }
+
+                .control-btn {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 50%;
+                    border: none;
+                    background: rgba(255, 255, 255, 0.08);
+                    color: white;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                }
+
+                .control-btn:hover { background: rgba(255, 255, 255, 0.15); transform: translateY(-2px); }
+                .control-btn.active { background: #8b5cf6; }
+                .control-btn.off { background: #ef4444; }
+                .control-btn.hangup { background: #ef4444; padding: 0 20px; border-radius: 100px; width: auto; }
+                .control-btn.hangup:hover { background: #dc2626; }
 
                 @media (max-width: 768px) {
-                    .video-grid {
-                        grid-template-columns: 1fr !important;
-                        padding: 10px !important;
-                        gap: 12px !important;
-                    }
-
-                    .video-cell {
-                        aspect-ratio: 16/9 !important;
-                        height: auto !important;
-                    }
-                }
-       /* Adjust header/footer for mobile */
-                     header {
-                        padding: 0 16px !important;
-                    }
-
-                    footer {
-                        width: calc(100% - 32px) !important;
-                        bottom: 24px !important;
-                    }
+                    .video-grid { grid-template-columns: 1fr !important; }
+                    .video-cell { aspect-ratio: 16/9; height: auto; }
                 }
 
-                .mobile-only { display: none; }
-                ::-webkit-scrollbar { width: 6px; }
+                ::-webkit-scrollbar { width: 4px; }
                 ::-webkit-scrollbar-track { background: transparent; }
                 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-                ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
             `}</style>
-
-            {/* Mobile Sync Indicator */}
-            <div className="mobile-only" style={{
-                position: 'fixed',
-                top: '80px',
-                right: '16px',
-                background: 'rgba(15, 23, 42, 0.9)',
-                backdropFilter: 'blur(8px)',
-                padding: '6px 12px',
-                borderRadius: '12px',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
-                zIndex: 100,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-            }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }}></div>
-                <span style={{ fontSize: '10px', fontWeight: '800', color: 'white', letterSpacing: '0.05em' }}>SYNCED</span>
-            </div>
         </div>
     );
 };
