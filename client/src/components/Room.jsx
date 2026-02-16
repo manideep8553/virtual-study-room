@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Peer from 'peerjs';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle, RotateCcw } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle } from 'lucide-react';
 import Chat from './Chat';
 import PomodoroTimer from './PomodoroTimer';
 import Resources from './Resources';
@@ -450,7 +450,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 </div>
 
                 {/* FLOATING CONTROLS */}
-                <div style={{
+                <div className="floating-controls" style={{
                     position: 'absolute',
                     bottom: '32px',
                     left: '50%',
@@ -473,11 +473,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                         {isVidOn ? <Video size={20} /> : <VideoOff size={20} />}
                     </button>
 
-                    <button onClick={() => window.location.reload()} className="control-btn" title="Refresh Connection">
-                        <RotateCcw size={20} />
-                    </button>
-
-                    <div style={{ width: '1px', height: '24px', background: 'rgba(255, 255, 255, 0.1)', margin: '0 8px' }}></div>
+                    <div className="control-divider"></div>
 
                     <button onClick={() => { setActiveTab('chat'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'chat' ? 'active' : ''}`} title="Chat">
                         <MessageSquare size={20} />
@@ -631,9 +627,26 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 .control-btn.hangup { background: #ef4444; padding: 0 20px; border-radius: 100px; width: auto; }
                 .control-btn.hangup:hover { background: #dc2626; }
 
+                .control-divider {
+                    width: 1px;
+                    height: 24px;
+                    background: rgba(255, 255, 255, 0.1);
+                    margin: 0 8px;
+                }
+
                 @media (max-width: 768px) {
                     .video-grid { grid-template-columns: 1fr !important; }
                     .video-cell { aspect-ratio: 16/9; height: auto; }
+                    .control-btn { width: 42px; height: 42px; }
+                    .control-btn.hangup { padding: 0 15px; }
+                    .floating-controls { 
+                        padding: 8px 12px !important; 
+                        gap: 6px !important;
+                        bottom: 16px !important;
+                        width: auto;
+                        max-width: 95%;
+                        justify-content: center;
+                    }
                 }
 
                 ::-webkit-scrollbar { width: 4px; }
@@ -709,7 +722,7 @@ const VideoPlayer = ({ stream, isVideoOn, username }) => {
                     height: '100%',
                     objectFit: 'cover',
                     background: '#000',
-                    opacity: isVideoOn ? 1 : 0, // Keep tag active but hidden if video is off
+                    opacity: 1, // Keep ALWAYS visible to browser to avoid audio throttling
                     transition: 'opacity 0.3s ease-out',
                     pointerEvents: 'none'
                 }}
