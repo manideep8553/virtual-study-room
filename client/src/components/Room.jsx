@@ -410,7 +410,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 <main style={{
                     flex: 1,
                     padding: '20px',
-                    overflow: 'hidden',
+                    overflowY: 'auto',
                     background: '#0f172a',
                     display: 'block',
                     position: 'relative'
@@ -977,11 +977,10 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 /* ZOOM-LIKE VIDEO GRID */
                 .video-grid {
                     display: grid;
-                    gap: 16px;
+                    gap: 24px;
                     width: 100%;
-                    height: 100%;
-                    max-height: calc(100vh - 100px);
-                    padding: 16px;
+                    min-height: 100%;
+                    padding: 24px;
                     box-sizing: border-box;
                     align-content: center;
                     justify-content: center;
