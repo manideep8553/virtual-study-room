@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Peer from 'peerjs';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle, RotateCcw } from 'lucide-react';
 import Chat from './Chat';
 import PomodoroTimer from './PomodoroTimer';
 import Resources from './Resources';
@@ -25,6 +25,30 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     const streamRef = useRef(null);
     const callsRef = useRef({});
     const screenTrackRef = useRef(null);
+    const audioContextRef = useRef(null);
+
+    // Audio Unblocker for mobile browsers
+    useEffect(() => {
+        const unlockAudio = () => {
+            if (!audioContextRef.current) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    audioContextRef.current = new AudioContext();
+                    console.log("[Audio] Context initialized");
+                }
+            }
+            if (audioContextRef.current?.state === 'suspended') {
+                audioContextRef.current.resume();
+                console.log("[Audio] Context resumed");
+            }
+        };
+        window.addEventListener('click', unlockAudio);
+        window.addEventListener('touchstart', unlockAudio);
+        return () => {
+            window.removeEventListener('click', unlockAudio);
+            window.removeEventListener('touchstart', unlockAudio);
+        };
+    }, []);
 
     useEffect(() => {
         let peer = null;
@@ -389,9 +413,18 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     {/* Remote Videos */}
                     {Object.entries(remoteStreams).map(([peerId, data]) => (
                         <div key={peerId} className="video-cell">
-                            {data.isVideoOn ? (
-                                <VideoPlayer stream={data.stream} />
-                            ) : (
+                            {/* 
+                                IMPORTANT: VideoPlayer must ALWAYS be mounted for the audio to play, 
+                                even if the camera (video track) is turned off. 
+                            */}
+                            <VideoPlayer
+                                key={data.stream.id}
+                                stream={data.stream}
+                                isVideoOn={data.isVideoOn}
+                                username={data.username}
+                            />
+
+                            {!data.isVideoOn && (
                                 <div className="camera-off-overlay">
                                     <div className="avatar">{data.username?.charAt(0).toUpperCase()}</div>
                                     <span style={{ color: '#666', fontSize: '12px', marginTop: '12px', fontWeight: '600' }}>Camera Off</span>
@@ -438,6 +471,10 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     </button>
                     <button onClick={toggleVideo} className={`control-btn ${!isVidOn ? 'off' : ''}`} title="Camera On/Off">
                         {isVidOn ? <Video size={20} /> : <VideoOff size={20} />}
+                    </button>
+
+                    <button onClick={() => window.location.reload()} className="control-btn" title="Refresh Connection">
+                        <RotateCcw size={20} />
                     </button>
 
                     <div style={{ width: '1px', height: '24px', background: 'rgba(255, 255, 255, 0.1)', margin: '0 8px' }}></div>
@@ -607,77 +644,102 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     );
 };
 
-const VideoPlayer = ({ stream }) => {
+const VideoPlayer = ({ stream, isVideoOn, username }) => {
     const videoRef = useRef();
     const [needsInteraction, setNeedsInteraction] = useState(false);
+    const [isAudioDetected, setIsAudioDetected] = useState(false);
 
     useEffect(() => {
         const video = videoRef.current;
         if (video && stream) {
-            console.log("[VideoPlayer] Attaching stream. Tracks:", stream.getTracks().map(t => `${t.kind}:${t.enabled}`));
+            console.log(`[VideoPlayer:${username}] Attaching stream. Video: ${isVideoOn}`);
 
+            // Check tracks
             const audioTracks = stream.getAudioTracks();
-            if (audioTracks.length === 0) {
-                console.warn("[VideoPlayer] No audio tracks found in stream!");
-            } else {
-                console.log(`[VideoPlayer] Found ${audioTracks.length} audio tracks.`);
+            if (audioTracks.length > 0) {
+                console.log(`[VideoPlayer:${username}] Found audio track. Enabled: ${audioTracks[0].enabled}`);
+                setIsAudioDetected(true);
+                // Ensure audio track is enabled on the receiving end
                 audioTracks.forEach(t => t.enabled = true);
             }
 
             video.srcObject = stream;
 
-            const handlePlay = () => {
-                video.play().catch(e => {
-                    console.warn("[VideoPlayer] Autoplay blocked or failed:", e);
+            const handlePlay = async () => {
+                try {
+                    video.volume = 1.0; // Ensure full volume
+                    await video.play();
+                    setNeedsInteraction(false);
+                    console.log(`[VideoPlayer:${username}] Playback success. Tracks active:`, stream.getTracks().every(t => t.readyState === 'live'));
+                } catch (e) {
+                    console.warn(`[VideoPlayer:${username}] Autoplay blocked:`, e);
                     setNeedsInteraction(true);
-                });
+                }
             };
 
+            video.onloadedmetadata = handlePlay;
             if (video.readyState >= 1) handlePlay();
-            else video.onloadedmetadata = handlePlay;
 
-            // Re-attempt play if tracks are added/changed
-            stream.onaddtrack = handlePlay;
+            // Listen for changes in stream (like tracks being added)
+            stream.onactive = () => console.log(`[VideoPlayer:${username}] Stream active`);
+            stream.oninactive = () => console.log(`[VideoPlayer:${username}] Stream inactive`);
         }
-    }, [stream]);
+    }, [stream, username, isVideoOn]);
 
     const forcePlay = () => {
         if (videoRef.current) {
             videoRef.current.play().then(() => {
                 setNeedsInteraction(false);
-                console.log("[VideoPlayer] Playback resumed after interaction");
+                console.log(`[VideoPlayer:${username}] Playback resumed after click`);
             }).catch(err => {
-                console.error("[VideoPlayer] Failed to force play:", err);
+                console.error(`[VideoPlayer:${username}] Force play failed:`, err);
             });
         }
     };
 
     return (
-        <div style={{ width: '100%', height: '100%', position: 'relative' }} onClick={forcePlay}>
+        <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }} onClick={forcePlay}>
             <video
                 ref={videoRef}
                 autoPlay
                 playsInline
-                muted={false}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }}
+                muted={false} // NEVER mute remote streams or you won't hear them!
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    background: '#000',
+                    opacity: isVideoOn ? 1 : 0, // Keep tag active but hidden if video is off
+                    transition: 'opacity 0.3s ease-out',
+                    pointerEvents: 'none'
+                }}
             />
             {needsInteraction && (
                 <div style={{
                     position: 'absolute',
                     inset: 0,
-                    background: 'rgba(0,0,0,0.7)',
+                    background: 'rgba(0,0,0,0.8)',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    zIndex: 20,
+                    zIndex: 100,
                     cursor: 'pointer',
                     textAlign: 'center',
                     padding: '20px'
                 }}>
-                    <div style={{ background: '#8b5cf6', padding: '12px 24px', borderRadius: '12px', color: 'white', fontSize: '14px', fontWeight: 'bold', boxShadow: '0 10px 20px rgba(0,0,0,0.3)' }}>
-                        <div style={{ marginBottom: '8px' }}>AUDIO BLOCKED BY BROWSER</div>
-                        <div style={{ fontSize: '12px', opacity: 0.8 }}>CLICK ANYWHERE TO UNMUTE</div>
+                    <div style={{
+                        background: '#8b5cf6',
+                        padding: '16px 24px',
+                        borderRadius: '16px',
+                        color: 'white',
+                        fontSize: '14px',
+                        fontWeight: '700',
+                        boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+                        border: '1px solid rgba(255,255,255,0.2)'
+                    }}>
+                        <div style={{ marginBottom: '8px', fontSize: '18px' }}>🔇 AUDIO BLOCKED</div>
+                        <div style={{ fontSize: '12px', opacity: 0.9 }}>BROWSER REQUIRES A CLICK TO HEAR {username?.toUpperCase()}</div>
                     </div>
                 </div>
             )}
