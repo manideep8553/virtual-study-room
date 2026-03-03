@@ -8,14 +8,33 @@ const usePeer = (socket, roomId, username) => {
     const peersRef = useRef({});
 
     useEffect(() => {
-        const newPeer = new Peer(undefined, {
-            host: '/',
-            port: 3001, // PeerJS server usually runs elsewhere, but we can try default or specify
-            path: '/peerjs'
+        const peerInstance = new Peer(undefined, {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' },
+                    {
+                        urls: "turn:openrelay.metered.ca:80",
+                        username: "openrelayproject",
+                        credential: "openrelayproject",
+                    },
+                    {
+                        urls: "turn:openrelay.metered.ca:443",
+                        username: "openrelayproject",
+                        credential: "openrelayproject",
+                    },
+                    {
+                        urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                        username: "openrelayproject",
+                        credential: "openrelayproject",
+                    }
+                ],
+                iceCandidatePoolSize: 10
+            }
         });
-
-        // For simplicity in this local setup, let's use the default PeerJS cloud server if not hosting locally
-        const peerInstance = new Peer();
 
         peerInstance.on('open', (id) => {
             console.log('My peer ID is: ' + id);

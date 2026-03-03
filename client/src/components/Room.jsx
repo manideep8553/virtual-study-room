@@ -103,9 +103,27 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     config: {
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun2.l.google.com:19302' },
                             { urls: 'stun:stun3.l.google.com:19302' },
-                            { urls: 'stun:stun4.l.google.com:19302' }
+                            { urls: 'stun:stun4.l.google.com:19302' },
+                            // Add public TURN servers from Open Relay Project (metered.ca)
+                            // Note: For production it's highly recommended to use private TURN servers like Twilio or your own CoTURN instance
+                            {
+                                urls: "turn:openrelay.metered.ca:80",
+                                username: "openrelayproject",
+                                credential: "openrelayproject",
+                            },
+                            {
+                                urls: "turn:openrelay.metered.ca:443",
+                                username: "openrelayproject",
+                                credential: "openrelayproject",
+                            },
+                            {
+                                urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                                username: "openrelayproject",
+                                credential: "openrelayproject",
+                            }
                         ],
                         iceCandidatePoolSize: 10
                     }
