@@ -177,11 +177,13 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
                             if (room.roomKey) {
                                 const key = prompt("This is a private room. Please enter the Room Key:");
                                 if (key === room.roomKey) {
+                                    sessionStorage.setItem(`roomKey_${room.id}`, key);
                                     onJoinRoom(room.id, room.name);
                                 } else if (key !== null) {
                                     alert("Incorrect Room Key!");
                                 }
                             } else {
+                                sessionStorage.removeItem(`roomKey_${room.id}`);
                                 onJoinRoom(room.id, room.name);
                             }
                         }}

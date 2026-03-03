@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Peer from 'peerjs';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle } from 'lucide-react';
 import Chat from './Chat';
 import PomodoroTimer from './PomodoroTimer';
 import Resources from './Resources';
+import Whiteboard from './Whiteboard';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle, PenTool } from 'lucide-react';
 
 const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     // State
@@ -94,7 +95,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
 
                 // 2. Create Peer
                 setStatus('Establishing connection...');
-                peer = new Peer(undefined, {
+                const peerConfig = {
                     config: {
                         iceServers: [
                             { urls: 'stun:stun.l.google.com:19302' },
@@ -102,8 +103,6 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                             { urls: 'stun:stun2.l.google.com:19302' },
                             { urls: 'stun:stun3.l.google.com:19302' },
                             { urls: 'stun:stun4.l.google.com:19302' },
-                            // Add public TURN servers from Open Relay Project (metered.ca)
-                            // Note: For production it's highly recommended to use private TURN servers like Twilio or your own CoTURN instance
                             {
                                 urls: "turn:openrelay.metered.ca:80",
                                 username: "openrelayproject",
@@ -113,25 +112,36 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                                 urls: "turn:openrelay.metered.ca:443",
                                 username: "openrelayproject",
                                 credential: "openrelayproject",
-                            },
-                            {
-                                urls: "turn:openrelay.metered.ca:443?transport=tcp",
-                                username: "openrelayproject",
-                                credential: "openrelayproject",
                             }
                         ],
                         iceCandidatePoolSize: 10
                     }
-                });
+                };
+
+                peer = new Peer(undefined, peerConfig);
                 peerRef.current = peer;
 
                 peer.on('open', (myPeerId) => {
+                    const savedKey = sessionStorage.getItem(`roomKey_${roomId}`);
                     setStatus('Live');
                     socket.emit('join_room', {
                         roomId,
                         username,
-                        peerId: myPeerId
+                        peerId: myPeerId,
+                        roomKey: savedKey
                     });
+                });
+
+                socket.on('join_error', (msg) => {
+                    alert(msg);
+                    onLeave();
+                });
+
+                socket.on('connect', () => {
+                    console.log("Socket Reconnected! Syncing room...");
+                    if (peer?.id) {
+                        socket.emit('join_room', { roomId, username, peerId: peer.id });
+                    }
                 });
 
                 peer.on('error', () => {
@@ -269,13 +279,11 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
             isMounted = false;
             console.log("Cleaning up room...");
             if (streamRef.current) {
-                streamRef.current.getTracks().forEach(t => {
-                    t.stop();
-                    console.log(`Stopped track: ${t.kind}`);
-                });
+                streamRef.current.getTracks().forEach(t => t.stop());
             }
             if (peer) peer.destroy();
             socket.off('nickname_changed');
+            socket.off('join_error');
             socket.emit('leave_room', roomId);
         };
     }, [roomId, username, socket]);
@@ -497,6 +505,9 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     <button onClick={() => { setActiveTab('chat'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'chat' ? 'active' : ''}`} title="Chat">
                         <MessageSquare size={20} />
                     </button>
+                    <button onClick={() => { setActiveTab('whiteboard'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'whiteboard' ? 'active' : ''}`} title="Whiteboard">
+                        <PenTool size={20} />
+                    </button>
                     <button onClick={() => { setActiveTab('tools'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'tools' ? 'active' : ''}`} title="Focus Timer">
                         <Timer size={20} />
                     </button>
@@ -527,6 +538,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     </div>
                     <div style={{ flex: 1, overflow: 'hidden' }}>
                         {activeTab === 'chat' && <Chat socket={socket} roomId={roomId} username={username} />}
+                        {activeTab === 'whiteboard' && <div style={{ height: '100%', padding: '10px' }}><Whiteboard socket={socket} roomId={roomId} /></div>}
                         {activeTab === 'tools' && <div style={{ padding: '20px' }}><PomodoroTimer socket={socket} roomId={roomId} /></div>}
                         {activeTab === 'share' && (
                             <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>

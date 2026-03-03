@@ -15,8 +15,19 @@ const Chat = ({ socket, roomId, username }) => {
             }]);
         };
 
+        const handleHistory = (history) => {
+            setMessages(history.map(msg => ({
+                ...msg,
+                id: msg._id || Math.random()
+            })));
+        };
+
         socket.on('receive_message', handleReceiveMessage);
-        return () => socket.off('receive_message');
+        socket.on('message_history', handleHistory);
+        return () => {
+            socket.off('receive_message');
+            socket.off('message_history');
+        };
     }, [socket]);
 
     useEffect(() => {

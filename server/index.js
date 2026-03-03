@@ -11,8 +11,10 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
-  pingTimeout: 60000,
-  pingInterval: 25000
+  pingTimeout: 180000, // Increased to 3 minutes for distant/weak connections
+  pingInterval: 25000,
+  connectTimeout: 45000,
+  transports: ['websocket', 'polling'] // Allow fallback
 });
 
 // MongoDB Connection
@@ -106,21 +108,37 @@ async function getRoomInfo(roomId) {
 }
 
 async function broadcastRoomUpdate(roomId) {
-  const info = await getRoomInfo(roomId);
+  const active = activeParticipants.get(roomId) || new Set();
+  const participantList = Array.from(active);
+  const count = participantList.length;
 
-  // Send to people IN the room
+  // Send to people IN the room (Immediate memory-based update)
   io.to(roomId).emit('room_update', {
-    participants: info.participants,
-    count: info.count
+    participants: participantList,
+    count: count
   });
 
-  // Send count to people on lobby/explorer
+  // Update lobby counts
   io.to(`lobby_${roomId}`).emit('room_count', {
     roomId,
-    count: info.count
+    count: count
   });
 
-  console.log(`Room [${roomId}]: ${info.count} active`);
+  // CLEANUP LOGIC: If room is empty, wipe the DB entries
+  if (count === 0) {
+    console.log(`🧹 Room [${roomId}] is empty. Cleaning up resources and chat...`);
+    try {
+      await Promise.all([
+        MessageModel.deleteMany({ roomId }),
+        ResourceModel.deleteMany({ roomId })
+      ]);
+      console.log(`✅ Cleanup complete for room [${roomId}]`);
+    } catch (err) {
+      console.error(`❌ Cleanup failed for room [${roomId}]:`, err);
+    }
+  }
+
+  console.log(`Room [${roomId}]: ${count} active`);
 }
 
 io.on('connection', (socket) => {
@@ -195,8 +213,15 @@ io.on('connection', (socket) => {
   });
 
   // User joins a room
-  socket.on('join_room', async ({ roomId, username, peerId, isVideoOn, isMicOn }) => {
-    console.log(` ${username} joining room [${roomId}]`);
+  socket.on('join_room', async ({ roomId, username, peerId, isVideoOn, isMicOn, roomKey }) => {
+    console.log(` ${username} attempting to join room [${roomId}]`);
+
+    // Server-side Security Check for Room Key
+    const roomInDb = await RoomModel.findOne({ id: roomId });
+    if (roomInDb && roomInDb.roomKey && roomInDb.roomKey !== roomKey) {
+      console.log(`Blocked join for ${username}: Incorrect Key`);
+      return socket.emit('join_error', 'Invalid Room Key. Access Denied.');
+    }
 
     socket.leave(`lobby_${roomId}`);
     socket.join(roomId);
@@ -204,7 +229,7 @@ io.on('connection', (socket) => {
     socket.username = username;
 
     // Fetch message history
-    const history = await MessageModel.find({ roomId }).sort({ createdAt: 1 }).limit(50);
+    const history = await MessageModel.find({ roomId }).sort({ createdAt: 1 }).limit(100);
     socket.emit('message_history', history);
 
     // Add to active memory
@@ -214,12 +239,10 @@ io.on('connection', (socket) => {
 
     const participants = activeParticipants.get(roomId);
 
-    // Remove stale data for this peer/socket/username to prevent duplicates
-    const participantsArray = Array.from(participants);
-    const filtered = participantsArray.filter(p =>
+    // Remove stale data
+    const filtered = Array.from(participants).filter(p =>
       p.socketId !== socket.id &&
-      p.peerId !== peerId &&
-      p.username !== username
+      p.peerId !== peerId
     );
 
     const newParticipant = {
@@ -229,15 +252,34 @@ io.on('connection', (socket) => {
       isVideoOn: isVideoOn !== undefined ? isVideoOn : true,
       isMicOn: isMicOn !== undefined ? isMicOn : true
     };
-    const updatedSet = new Set(filtered);
-    updatedSet.add(newParticipant);
-    activeParticipants.set(roomId, updatedSet);
+
+    activeParticipants.set(roomId, new Set([...filtered, newParticipant]));
 
     // Signaling
     socket.emit('existing_participants', filtered);
     socket.to(roomId).emit('new_participant', newParticipant);
 
     broadcastRoomUpdate(roomId);
+  });
+
+  socket.on('leave_room', (roomId) => {
+    if (activeParticipants.has(roomId)) {
+      const participants = activeParticipants.get(roomId);
+      const pArray = Array.from(participants);
+      const person = pArray.find(p => p.socketId === socket.id);
+
+      if (person) {
+        const filtered = pArray.filter(p => p.socketId !== socket.id);
+        if (filtered.length === 0) {
+          activeParticipants.delete(roomId);
+        } else {
+          activeParticipants.set(roomId, new Set(filtered));
+        }
+        socket.to(roomId).emit('participant_left', person.peerId);
+        broadcastRoomUpdate(roomId);
+      }
+    }
+    socket.leave(roomId);
   });
 
   socket.on('send_message', async ({ roomId, message, username }) => {
@@ -382,6 +424,15 @@ io.on('connection', (socket) => {
     // Pomodoro Timer Sync
     socket.on('timer_update', ({ roomId, type, timeLeft, isActive, mode }) => {
       socket.to(roomId).emit('sync_timer', { type, timeLeft, isActive, mode });
+    });
+
+    // Whiteboard Sync
+    socket.on('draw-line', (data) => {
+      socket.to(data.roomId).emit('draw-line', data);
+    });
+
+    socket.on('clear-canvas', (roomId) => {
+      socket.to(roomId).emit('clear-canvas');
     });
   });
 });
