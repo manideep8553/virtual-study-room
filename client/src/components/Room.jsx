@@ -39,24 +39,19 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
             if (audioContextRef.current?.state === 'suspended') {
                 audioContextRef.current.resume();
             }
-            // Keep-alive heartbeat: Play a tiny silent oscillation to keep hardware active
-            const osc = audioContextRef.current?.createOscillator();
-            const gain = audioContextRef.current?.createGain();
-            if (osc && gain) {
-                gain.gain.value = 0.0001; // Inaudible
-                osc.connect(gain);
-                gain.connect(audioContextRef.current.destination);
-                osc.start();
-                setTimeout(() => osc.stop(), 100);
-            }
+            // Ensure all video elements are unmuted and playing
+            const videos = document.querySelectorAll('video');
+            videos.forEach(v => {
+                if (v.id !== 'self-video-element' && v.paused) {
+                    v.play().catch(() => { });
+                }
+            });
         };
         window.addEventListener('click', unlockAudio);
         window.addEventListener('touchstart', unlockAudio);
-        const interval = setInterval(unlockAudio, 20000); // Periodic keep-alive
         return () => {
             window.removeEventListener('click', unlockAudio);
             window.removeEventListener('touchstart', unlockAudio);
-            clearInterval(interval);
         };
     }, []);
 
@@ -143,22 +138,44 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     setStatus('Connection issue');
                 });
 
-                // 3. Handle incoming calls
-                peer.on('call', (call) => {
-                    const callerPeerId = call.peer;
-                    const callerUsername = call.metadata?.username || 'Peer';
+                socket.on('existing_participants', (existingPeople) => {
+                    console.log("Calling existing participants:", existingPeople.length);
 
-                    console.log(`[Call] Incoming from ${callerUsername}. Tracks:`, myMediaStream?.getTracks().length);
+                    const startCalls = () => {
+                        if (!myMediaStream || myMediaStream.getAudioTracks().length === 0) {
+                            setTimeout(startCalls, 500); // Wait for mic to be fully ready
+                            return;
+                        }
 
+                        existingPeople.forEach((person, idx) => {
+                            setTimeout(() => {
+                                console.log(`Calling ${person.username}...`);
+                                const call = peer.call(person.peerId, myMediaStream, {
+                                    metadata: { username, isVideoOn: isVidOn, isMicOn: isMicOn }
+                                });
+
+                                if (call) {
+                                    handleCall(call, person.peerId, person.username);
+                                }
+                            }, idx * 600);
+                        });
+                    };
+                    startCalls();
+                });
+
+                const handleCall = (call, peerId, peerUsername) => {
                     call.on('stream', (remoteStream) => {
-                        console.log(`[Stream] Received from: ${callerUsername}. Audio tracks: ${remoteStream.getAudioTracks().length}`);
+                        console.log(`[Stream] Connected: ${peerUsername}`);
+                        // Force audio tracks to be enabled (Fixes Safari bug)
+                        remoteStream.getAudioTracks().forEach(track => track.enabled = true);
+
                         setRemoteStreams(prev => ({
                             ...prev,
-                            [callerPeerId]: {
+                            [peerId]: {
                                 stream: remoteStream,
-                                username: callerUsername,
-                                isVideoOn: call.metadata?.isVideoOn !== false,
-                                isMicOn: call.metadata?.isMicOn !== false
+                                username: peerUsername,
+                                isVideoOn: true,
+                                isMicOn: true
                             }
                         }));
                     });
@@ -167,61 +184,24 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     call.on('close', () => {
                         setRemoteStreams(prev => {
                             const updated = { ...prev };
-                            delete updated[callerPeerId];
+                            delete updated[peerId];
                             return updated;
                         });
                     });
+                    callsRef.current[peerId] = call;
+                };
 
-                    callsRef.current[callerPeerId] = call;
+                peer.on('call', (call) => {
+                    const callerPeerId = call.peer;
+                    const callerUsername = call.metadata?.username || 'Peer';
+                    handleCall(call, callerPeerId, callerUsername);
 
-                    // Critical: Answer with the stream only if it's ready, or Wait
-                    const answerWithRetry = (attempts = 0) => {
-                        if (myMediaStream && myMediaStream.getTracks().length > 0) {
-                            call.answer(myMediaStream);
-                        } else if (attempts < 5) {
-                            setTimeout(() => answerWithRetry(attempts + 1), 500);
-                        } else {
-                            call.answer(new MediaStream()); // Fallback
-                        }
-                    };
-                    answerWithRetry();
-                });
-
-                // 4. Socket events
-                socket.on('existing_participants', (existingPeople) => {
-                    console.log("Calling existing participants:", existingPeople.length);
-                    existingPeople.forEach((person, idx) => {
-                        setTimeout(() => {
-                            console.log(`Calling ${person.username}...`);
-                            const call = peer.call(person.peerId, myMediaStream, {
-                                metadata: { username, isVideoOn: isVidOn, isMicOn: isMicOn }
-                            });
-
-                            if (call) {
-                                call.on('stream', (remoteStream) => {
-                                    console.log(`[Stream] Connected to: ${person.username}`);
-                                    setRemoteStreams(prev => ({
-                                        ...prev,
-                                        [person.peerId]: {
-                                            stream: remoteStream,
-                                            username: person.username,
-                                            isVideoOn: person.isVideoOn !== false,
-                                            isMicOn: person.isMicOn !== false
-                                        }
-                                    }));
-                                });
-                                call.on('error', (err) => console.error("Peer call error:", err));
-                                call.on('close', () => {
-                                    setRemoteStreams(prev => {
-                                        const updated = { ...prev };
-                                        delete updated[person.peerId];
-                                        return updated;
-                                    });
-                                });
-                                callsRef.current[person.peerId] = call;
-                            }
-                        }, idx * 400);
-                    });
+                    if (myMediaStream) {
+                        call.answer(myMediaStream);
+                    } else {
+                        // Wait slightly if stream isn't ready
+                        setTimeout(() => call.answer(streamRef.current || new MediaStream()), 1000);
+                    }
                 });
 
                 socket.on('room_update', ({ participants: allParticipants }) => {
