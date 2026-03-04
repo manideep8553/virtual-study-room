@@ -298,7 +298,7 @@ io.on('connection', (socket) => {
     // Save to DB
     await MessageModel.create({ roomId, username, message, time });
 
-    io.to(roomId).emit('receive_message', {
+    io.in(roomId).emit('receive_message', {
       id: Date.now().toString(),
       username,
       message,

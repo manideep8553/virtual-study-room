@@ -82,24 +82,45 @@ const Whiteboard = ({ socket, roomId }) => {
     };
 
     // Improved Draw Function
-    const lastPos = useRef({ x: 0, y: 0 });
+    const getCoordinates = (e) => {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        let clientX, clientY;
 
-    const handleMouseDown = (e) => {
-        const { offsetX, offsetY } = e.nativeEvent;
-        lastPos.current = { x: offsetX, y: offsetY };
+        if (e.touches && e.touches[0]) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
+    };
+
+    const handleStart = (e) => {
+        if (e.type === 'touchstart') e.preventDefault();
+        const { x, y } = getCoordinates(e);
+        lastPos.current = { x, y };
         setIsDrawing(true);
     };
 
-    const handleMouseMove = (e) => {
+    const handleMove = (e) => {
         if (!isDrawing) return;
-        const { offsetX, offsetY } = e.nativeEvent;
+        if (e.type === 'touchmove') e.preventDefault();
+
+        const { x, y } = getCoordinates(e);
         const x0 = lastPos.current.x;
         const y0 = lastPos.current.y;
-        const x1 = offsetX;
-        const y1 = offsetY;
+        const x1 = x;
+        const y1 = y;
 
         // Draw locally
         const ctx = contextRef.current;
+        if (!ctx) return;
         ctx.beginPath();
         ctx.moveTo(x0, y0);
         ctx.lineTo(x1, y1);
@@ -112,9 +133,14 @@ const Whiteboard = ({ socket, roomId }) => {
         lastPos.current = { x: x1, y: y1 };
     };
 
+    const handleEnd = () => {
+        setIsDrawing(false);
+    };
+
     const clearCanvas = () => {
         const canvas = canvasRef.current;
-        contextRef.current.clearRect(0, 0, canvas.width, canvas.height);
+        const ctx = contextRef.current;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         socket.emit('clear-canvas', roomId);
     };
 
@@ -152,13 +178,17 @@ const Whiteboard = ({ socket, roomId }) => {
                     CLEAR ALL
                 </button>
             </div>
-            <div style={{ flex: 1, position: 'relative', cursor: 'crosshair', background: '#fdfdfd' }}>
+            <div style={{ flex: 1, position: 'relative', cursor: 'crosshair', background: '#fdfdfd', touchAction: 'none' }}>
                 <canvas
                     ref={canvasRef}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={finishDrawing}
-                    onMouseLeave={finishDrawing}
+                    onMouseDown={handleStart}
+                    onMouseMove={handleMove}
+                    onMouseUp={handleEnd}
+                    onMouseLeave={handleEnd}
+                    onTouchStart={handleStart}
+                    onTouchMove={handleMove}
+                    onTouchEnd={handleEnd}
+                    style={{ touchAction: 'none', display: 'block' }}
                 />
             </div>
         </div>
