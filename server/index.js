@@ -316,14 +316,19 @@ io.on('connection', (socket) => {
   });
 
   socket.on('create_room', async (roomData) => {
-    console.log(`Creating room: ${roomData.name}`);
+    console.log(`Creating room: ${roomData.name} (${roomData.id})`);
     try {
-      // Ensure we include roomKey if provided
+      // 1. Save to MongoDB
       await RoomModel.create(roomData);
-      // Notify everyone about the new room
-      io.emit('room_created', roomData);
+
+      // 2. Refresh the room list for EVERYONE on the platform immediately
+      const rooms = await RoomModel.find({});
+      io.emit('rooms_list', rooms);
+
+      console.log(`✅ Room [${roomData.name}] created and broadcasted to all.`);
     } catch (err) {
-      console.log('Error creating room:', err);
+      console.log('❌ Error creating room:', err);
+      socket.emit('error', 'Could not create room. It might already exist.');
     }
   });
 

@@ -22,8 +22,11 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
         };
 
         const handleRoomCreated = (roomData) => {
-            setRooms(prev => [...prev.filter(r => r.id !== roomData.id), roomData]);
-            socket.emit('preview_room', roomData.id);
+            if (Array.isArray(roomData)) {
+                setRooms(roomData);
+            } else {
+                setRooms(prev => [...prev.filter(r => r.id !== roomData.id), roomData]);
+            }
         };
 
         const handleRoomDeleted = (roomId) => {

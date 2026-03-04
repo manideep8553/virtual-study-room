@@ -114,7 +114,8 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                                 credential: "openrelayproject",
                             }
                         ],
-                        iceCandidatePoolSize: 10
+                        iceCandidatePoolSize: 10,
+                        iceTransportPolicy: 'all'
                     }
                 };
 
