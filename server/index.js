@@ -80,6 +80,16 @@ const ResourceModel = mongoose.model('Resource', resourceSchema);
 // Seed Initial Rooms if DB is empty
 async function seedRooms() {
   const count = await RoomModel.countDocuments();
+
+  // GLOBAL CLEANUP: Every time the server starts, we wipe the chat and resources
+  // This ensures the "Virtual Room" doesn't have 4-day old messages from dead sessions.
+  console.log('🧹 Performing Global Session Cleanup...');
+  await Promise.all([
+    MessageModel.deleteMany({}),
+    ResourceModel.deleteMany({})
+  ]);
+  console.log('✅ Chat and Resources reset for fresh session.');
+
   if (count === 0) {
     const defaultRooms = [
       { id: 'maths', name: 'Mathematics & Calculus', description: 'Advanced calculus and linear algebra collaboration group.', tag: 'Academic' },

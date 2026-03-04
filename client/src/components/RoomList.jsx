@@ -36,7 +36,7 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
         socket.on('rooms_list', handleRoomsList);
         socket.on('room_count', handleCount);
         socket.on('room_deleted', handleRoomDeleted);
-        socket.on('room_created', handleRoomCreated);
+        socket.on('room_created', handleRoomsList); // Use handleRoomsList for room_created too to get full update
 
         const interval = setInterval(() => {
             rooms.forEach(room => socket.emit('preview_room', room.id));
@@ -77,9 +77,6 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
 
         setIsCreateModalOpen(false);
         setNewRoom({ name: '', description: '', tag: 'Academic', roomKey: '' });
-
-        // Join the newly created room (it will trigger on the server)
-        onJoinRoom(roomId, newRoom.name);
     };
 
     const filteredRooms = rooms.filter(room =>
