@@ -328,17 +328,24 @@ io.on('connection', (socket) => {
   socket.on('create_room', async (roomData) => {
     console.log(`Creating room: ${roomData.name} (${roomData.id})`);
     try {
-      // 1. Save to MongoDB
+      // 1. Check if room ID already exists
+      const existing = await RoomModel.findOne({ id: roomData.id });
+      if (existing) {
+        return socket.emit('error', 'A room with this name already exists.');
+      }
+
+      // 2. Save to MongoDB
       await RoomModel.create(roomData);
 
-      // 2. Refresh the room list for EVERYONE on the platform immediately
+      // 3. Refresh the room list for EVERYONE on the platform immediately
       const rooms = await RoomModel.find({});
       io.emit('rooms_list', rooms);
+      io.emit('room_created', rooms); // Redundant for safety
 
       console.log(`✅ Room [${roomData.name}] created and broadcasted to all.`);
     } catch (err) {
       console.log('❌ Error creating room:', err);
-      socket.emit('error', 'Could not create room. It might already exist.');
+      socket.emit('error', 'Server error while creating room.');
     }
   });
 

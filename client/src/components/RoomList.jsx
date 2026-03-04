@@ -68,10 +68,10 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
             id: roomId,
             name: newRoom.name,
             description: newRoom.description || 'A collaborative study space.',
-            participants: 0,
             tag: newRoom.tag
         };
 
+        console.log('🚀 Attempting to create room:', roomData);
         // Persist to MongoDB through socket
         socket.emit('create_room', { ...roomData, roomKey: newRoom.roomKey });
 
