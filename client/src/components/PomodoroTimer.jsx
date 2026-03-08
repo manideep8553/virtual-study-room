@@ -5,23 +5,30 @@ const PomodoroTimer = ({ socket, roomId }) => {
     const [timeLeft, setTimeLeft] = useState(25 * 60);
     const [isActive, setIsActive] = useState(false);
     const [mode, setMode] = useState('focus'); // 'focus', 'shortBreak', 'longBreak'
+    const [isMaster, setIsMaster] = useState(false);
 
     useEffect(() => {
         if (!socket) return;
 
         const handleSync = (data) => {
-            if (data.type === 'toggle') setIsActive(data.isActive);
+            if (data.type === 'toggle') {
+                setIsActive(data.isActive);
+                if (data.isActive) setIsMaster(false);
+            }
             if (data.type === 'reset' || data.type === 'mode') {
                 setIsActive(data.isActive);
                 setMode(data.mode);
                 setTimeLeft(data.timeLeft);
+                setIsMaster(false);
             }
-            if (data.type === 'tick') setTimeLeft(data.timeLeft);
+            if (data.type === 'tick') {
+                if (!isMaster) setTimeLeft(data.timeLeft);
+            }
         };
 
         socket.on('sync_timer', handleSync);
         return () => socket.off('sync_timer', handleSync);
-    }, [socket]);
+    }, [socket, isMaster]);
 
     useEffect(() => {
         let interval = null;
@@ -29,25 +36,29 @@ const PomodoroTimer = ({ socket, roomId }) => {
             interval = setInterval(() => {
                 setTimeLeft(prev => {
                     const next = prev - 1;
-                    // Sync every 10 seconds to keep all room members perfectly aligned
-                    if (next > 0 && next % 10 === 0) {
+                    // Only the Master (the one who started it) broadcasts ticks to keep everyone synced.
+                    if (isMaster && next > 0 && next % 5 === 0) {
                         socket.emit('timer_update', { roomId, type: 'tick', timeLeft: next });
                     }
                     if (next === 0) {
                         setIsActive(false);
+                        setIsMaster(false);
                     }
                     return next;
                 });
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [isActive, socket, roomId]);
+    }, [isActive, socket, roomId, isMaster]);
 
     const toggleTimer = () => {
-        if (!isActive && socket) {
-            // Check if others already have a timer going (we can check if timeLeft is changing)
-            // But let's simplify: the UI tells the user if it's already active via the "Dynamic Island"
+        if (!isActive) {
+            setIsMaster(true);
+        } else if (!isMaster) {
+            alert("The timer is already oned! Please wait for the current session to finish.");
+            return;
         }
+
         const nextActive = !isActive;
         setIsActive(nextActive);
         socket?.emit('timer_update', { roomId, type: 'toggle', isActive: nextActive });
@@ -55,6 +66,7 @@ const PomodoroTimer = ({ socket, roomId }) => {
 
     const resetTimer = () => {
         setIsActive(false);
+        setIsMaster(false);
         let time = 25 * 60;
         if (mode === 'focus') time = 25 * 60;
         else if (mode === 'shortBreak') time = 5 * 60;
@@ -66,11 +78,12 @@ const PomodoroTimer = ({ socket, roomId }) => {
 
     const changeMode = (newMode) => {
         if (isActive) {
-            alert("A study session is already in progress! Please stop it before changing modes.");
+            alert("The timer is already oned! You cannot change the session while it's active.");
             return;
         }
         setMode(newMode);
         setIsActive(false);
+        setIsMaster(false);
         let time = 25 * 60;
         if (newMode === 'focus') time = 25 * 60;
         else if (newMode === 'shortBreak') time = 5 * 60;

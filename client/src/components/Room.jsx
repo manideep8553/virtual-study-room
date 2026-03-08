@@ -40,6 +40,9 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
         return () => socket.off('sync_timer', handleTimerSync);
     }, [socket]);
 
+    // Track a simple sound debounce to avoid multiple alerts for the same event
+    const lastAlertRef = useRef(0);
+
     // Local tick for the Room Header Timer
     useEffect(() => {
         let interval = null;
@@ -321,11 +324,28 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 });
 
                 socket.on('hand_status_changed', ({ peerId, status }) => {
-                    setParticipants(prev => prev.map(p =>
-                        p.peerId === peerId ? { ...p, isHandRaised: status } : p
-                    ));
+                    setParticipants(prev => prev.map(p => {
+                        if (p.peerId === peerId) {
+                            return { ...p, isHandRaised: status };
+                        }
+                        return p;
+                    }));
                     setRemoteStreams(prev => {
                         if (!prev[peerId]) return prev;
+                        const user = prev[peerId].username || "A student";
+
+                        // Alert and Sound with Debounce
+                        const now = Date.now();
+                        if (status && (now - lastAlertRef.current > 2000)) {
+                            lastAlertRef.current = now;
+                            alert(`${user} raised the hand`);
+                            try {
+                                const audio = new Audio('/cling.mp3');
+                                audio.volume = 0.4;
+                                audio.play().catch(e => { });
+                            } catch (e) { }
+                        }
+
                         return {
                             ...prev,
                             [peerId]: { ...prev[peerId], isHandRaised: status }
