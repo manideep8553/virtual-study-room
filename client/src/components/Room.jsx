@@ -4,7 +4,8 @@ import Chat from './Chat';
 import PomodoroTimer from './PomodoroTimer';
 import Resources from './Resources';
 import Whiteboard from './Whiteboard';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle, PenTool, Hand } from 'lucide-react';
+import Summarizer from './Summarizer';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle, PenTool, Hand, Wand2 } from 'lucide-react';
 
 const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     // State
@@ -732,6 +733,9 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     <button onClick={() => { setActiveTab('share'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'share' ? 'active' : ''}`} title="Resources & Screen">
                         <Monitor size={20} />
                     </button>
+                    <button onClick={() => { setActiveTab('ai'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'ai' ? 'active' : ''}`} title="AI Study Recap" style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%)', border: 'none' }}>
+                        <Wand2 size={20} color="white" />
+                    </button>
 
                     <button onClick={onLeave} className="control-btn hangup" title="Leave Room">
                         <PhoneOff size={20} />
@@ -815,6 +819,9 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     </div>
                     <div style={{ display: activeTab === 'tools' ? 'contents' : 'none', padding: '20px' }}>
                         <PomodoroTimer socket={socket} roomId={roomId} />
+                    </div>
+                    <div style={{ display: activeTab === 'ai' ? 'contents' : 'none', height: '100%' }}>
+                        <Summarizer socket={socket} roomId={roomId} />
                     </div>
                     <div style={{ display: activeTab === 'share' ? 'flex' : 'none', height: '100%', flexDirection: 'column' }}>
                         <div style={{ padding: '20px' }}>

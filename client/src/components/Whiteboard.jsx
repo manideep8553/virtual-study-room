@@ -11,17 +11,39 @@ const Whiteboard = ({ socket, roomId }) => {
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        const rect = canvas.parentElement.getBoundingClientRect();
-        canvas.width = rect.width * 2;
-        canvas.height = rect.height * 2;
-        canvas.style.width = `${rect.width}px`;
-        canvas.style.height = `${rect.height}px`;
+        const parent = canvas.parentElement;
+        if (!canvas || !parent) return;
 
-        const context = canvas.getContext('2d');
-        context.scale(2, 2);
-        context.lineCap = 'round';
-        context.lineJoin = 'round';
-        contextRef.current = context;
+        const resizeCanvas = () => {
+            const rect = parent.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return;
+
+            // Preserve current drawing
+            const tempImage = canvas.toDataURL();
+
+            canvas.width = rect.width * 2;
+            canvas.height = rect.height * 2;
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+
+            const context = canvas.getContext('2d');
+            context.scale(2, 2);
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+            contextRef.current = context;
+
+            // Restore drawing
+            const img = new Image();
+            img.src = tempImage;
+            img.onload = () => {
+                context.drawImage(img, 0, 0, rect.width, rect.height);
+            };
+        };
+
+        const resizeObserver = new ResizeObserver(() => {
+            resizeCanvas();
+        });
+        resizeObserver.observe(parent);
 
         const handleDraw = ({ x0, y0, x1, y1, color, thickness, opacity }) => {
             const ctx = contextRef.current;
@@ -46,11 +68,15 @@ const Whiteboard = ({ socket, roomId }) => {
         socket.on('draw-line', handleDraw);
         socket.on('clear-canvas', handleClear);
 
+        // Initial resize
+        resizeCanvas();
+
         return () => {
+            resizeObserver.disconnect();
             socket.off('draw-line');
             socket.off('clear-canvas');
         };
-    }, [socket]);
+    }, [socket, roomId]);
 
     const getToolSettings = () => {
         switch (tool) {
