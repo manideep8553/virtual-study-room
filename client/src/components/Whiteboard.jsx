@@ -63,16 +63,25 @@ const Whiteboard = ({ socket, roomId }) => {
 
     const getCoordinates = (e) => {
         const canvas = canvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        let clientX, clientY;
-        if (e.touches && e.touches[0]) {
+
+        let clientX = 0;
+        let clientY = 0;
+
+        if (e.touches && e.touches.length > 0) {
             clientX = e.touches[0].clientX;
             clientY = e.touches[0].clientY;
         } else {
             clientX = e.clientX;
             clientY = e.clientY;
         }
-        return { x: clientX - rect.left, y: clientY - rect.top };
+
+        // Return coordinates relative to the canvas CSS size
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
     };
 
     const handleStart = (e) => {

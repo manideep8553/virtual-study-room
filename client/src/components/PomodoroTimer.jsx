@@ -29,16 +29,19 @@ const PomodoroTimer = ({ socket, roomId }) => {
             interval = setInterval(() => {
                 setTimeLeft(prev => {
                     const next = prev - 1;
-                    // Sync tick slightly less often to avoid network flood, or just let local tick handle it
-                    // if (next % 10 === 0) socket.emit('timer_update', { roomId, type: 'tick', timeLeft: next });
+                    // Sync every 10 seconds to keep all room members perfectly aligned
+                    if (next > 0 && next % 10 === 0) {
+                        socket.emit('timer_update', { roomId, type: 'tick', timeLeft: next });
+                    }
+                    if (next === 0) {
+                        setIsActive(false);
+                    }
                     return next;
                 });
             }, 1000);
-        } else if (timeLeft === 0) {
-            setIsActive(false);
         }
         return () => clearInterval(interval);
-    }, [isActive, timeLeft, socket, roomId]);
+    }, [isActive, socket, roomId]);
 
     const toggleTimer = () => {
         if (!isActive && socket) {

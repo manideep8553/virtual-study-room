@@ -438,24 +438,27 @@ io.on('connection', (socket) => {
           }
 
           socket.to(roomId).emit('participant_left', person.peerId);
-          broadcastRoomUpdate(roomId);
         }
       }
     });
+  });
 
-    // Pomodoro Timer Sync
-    socket.on('timer_update', ({ roomId, type, timeLeft, isActive, mode }) => {
-      socket.to(roomId).emit('sync_timer', { type, timeLeft, isActive, mode });
-    });
+  // Pomodoro Timer Sync
+  socket.on('timer_update', ({ roomId, type, timeLeft, isActive, mode }) => {
+    socket.to(roomId).emit('sync_timer', { type, timeLeft, isActive, mode });
+  });
 
-    // Whiteboard Sync
-    socket.on('draw-line', (data) => {
-      socket.to(data.roomId).emit('draw-line', data);
-    });
+  // Whiteboard Sync
+  socket.on('draw-line', (data) => {
+    socket.to(data.roomId).emit('draw-line', data);
+  });
 
-    socket.on('clear-canvas', (roomId) => {
-      socket.to(roomId).emit('clear-canvas');
-    });
+  socket.on('clear-canvas', (roomId) => {
+    socket.to(roomId).emit('clear-canvas');
+  });
+
+  socket.on('toggle_hand', ({ roomId, peerId, status }) => {
+    socket.to(roomId).emit('hand_status_changed', { peerId, status });
   });
 });
 
