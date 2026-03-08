@@ -41,6 +41,10 @@ const PomodoroTimer = ({ socket, roomId }) => {
     }, [isActive, timeLeft, socket, roomId]);
 
     const toggleTimer = () => {
+        if (!isActive && socket) {
+            // Check if others already have a timer going (we can check if timeLeft is changing)
+            // But let's simplify: the UI tells the user if it's already active via the "Dynamic Island"
+        }
         const nextActive = !isActive;
         setIsActive(nextActive);
         socket?.emit('timer_update', { roomId, type: 'toggle', isActive: nextActive });
@@ -58,6 +62,10 @@ const PomodoroTimer = ({ socket, roomId }) => {
     };
 
     const changeMode = (newMode) => {
+        if (isActive) {
+            alert("A study session is already in progress! Please stop it before changing modes.");
+            return;
+        }
         setMode(newMode);
         setIsActive(false);
         let time = 25 * 60;

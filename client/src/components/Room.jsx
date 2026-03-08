@@ -19,6 +19,60 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     const [showSidePanel, setShowSidePanel] = useState(window.innerWidth > 768);
     const [activeTab, setActiveTab] = useState('chat');
     const [status, setStatus] = useState('Connecting...');
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [roomTimer, setRoomTimer] = useState({ timeLeft: 25 * 60, isActive: false, mode: 'focus' });
+
+    // Global Timer Sync for "Dynamic Island"
+    useEffect(() => {
+        const handleTimerSync = (data) => {
+            setRoomTimer(prev => ({
+                ...prev,
+                timeLeft: data.timeLeft !== undefined ? data.timeLeft : prev.timeLeft,
+                isActive: data.isActive !== undefined ? data.isActive : prev.isActive,
+                mode: data.mode !== undefined ? data.mode : prev.mode
+            }));
+        };
+
+        socket.on('sync_timer', handleTimerSync);
+        return () => socket.off('sync_timer', handleTimerSync);
+    }, [socket]);
+
+    // Local tick for the Room Header Timer
+    useEffect(() => {
+        let interval = null;
+        if (roomTimer.isActive && roomTimer.timeLeft > 0) {
+            interval = setInterval(() => {
+                setRoomTimer(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [roomTimer.isActive, roomTimer.timeLeft]);
+
+    // Format time for Display
+    const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Increment unread count if a message arrives and chat isn't active/visible
+    useEffect(() => {
+        const handleNewMessage = (data) => {
+            if (!showSidePanel || activeTab !== 'chat') {
+                setUnreadCount(prev => prev + 1);
+            }
+        };
+
+        socket.on('receive_message', handleNewMessage);
+        return () => socket.off('receive_message', handleNewMessage);
+    }, [socket, showSidePanel, activeTab]);
+
+    // Clear unread count when chat becomes active
+    useEffect(() => {
+        if (showSidePanel && activeTab === 'chat') {
+            setUnreadCount(0);
+        }
+    }, [showSidePanel, activeTab]);
 
     // Refs
     const myVideoRef = useRef();
@@ -411,6 +465,28 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                                 </span>
                             )}
                         </div>
+
+                        {/* DYNAMIC ISLAND TIMER */}
+                        {roomTimer.isActive && (
+                            <div style={{
+                                background: 'rgba(0,0,0,0.85)',
+                                color: 'white',
+                                padding: '6px 20px',
+                                borderRadius: '100px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                                backdropFilter: 'blur(20px)',
+                                animation: 'bounce 0.4s ease-out'
+                            }}>
+                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: roomTimer.mode === 'focus' ? '#8b5cf6' : '#10b981', boxShadow: `0 0 10px ${roomTimer.mode === 'focus' ? '#8b5cf6' : '#10b981'}` }}></div>
+                                <span style={{ fontSize: '13px', fontWeight: '800', fontFamily: 'monospace', letterSpacing: '1px' }}>{formatTime(roomTimer.timeLeft)}</span>
+                                <span style={{ fontSize: '9px', fontWeight: '900', color: '#64748b', textTransform: 'uppercase' }}>{roomTimer.mode === 'focus' ? 'Focus' : 'Break'}</span>
+                            </div>
+                        )}
+
                         <div style={{ background: 'rgba(16, 185, 129, 0.2)', padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
                             <span style={{ fontSize: '11px', fontWeight: '800', color: '#10b981' }}>{participantCount} LIVE</span>
                         </div>
@@ -503,8 +579,28 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
 
                     <div className="control-divider"></div>
 
-                    <button onClick={() => { setActiveTab('chat'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'chat' ? 'active' : ''}`} title="Chat">
+                    <button onClick={() => { setActiveTab('chat'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'chat' ? 'active' : ''}`} title="Chat" style={{ position: 'relative' }}>
                         <MessageSquare size={20} />
+                        {unreadCount > 0 && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '-6px',
+                                right: '-6px',
+                                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                                color: 'white',
+                                borderRadius: '10px',
+                                padding: '2px 6px',
+                                fontSize: '10px',
+                                fontWeight: '900',
+                                minWidth: '14px',
+                                textAlign: 'center',
+                                border: '2px solid #141414',
+                                boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
+                                animation: 'bounce 0.4s ease-out'
+                            }}>
+                                {unreadCount > 9 ? '9+' : unreadCount}
+                            </div>
+                        )}
                     </button>
                     <button onClick={() => { setActiveTab('whiteboard'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'whiteboard' ? 'active' : ''}`} title="Whiteboard">
                         <PenTool size={20} />
@@ -523,44 +619,56 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
             </div>
 
             {/* Side Panel */}
-            {showSidePanel && (
-                <div style={{
-                    width: '380px',
-                    background: '#0f0f0f',
-                    borderLeft: '1px solid rgba(255,255,255,0.1)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    animation: 'slideInRight 0.3s ease-out',
-                    zIndex: 300
-                }}>
-                    <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: '700', textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.1em', color: '#888' }}>{activeTab}</span>
-                        <XCircle size={20} onClick={() => setShowSidePanel(false)} style={{ cursor: 'pointer', color: '#666' }} />
+            <div style={{
+                width: showSidePanel ? '380px' : '0px',
+                opacity: showSidePanel ? 1 : 0,
+                pointerEvents: showSidePanel ? 'auto' : 'none',
+                background: '#0f0f0f',
+                borderLeft: showSidePanel ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                zIndex: 300,
+                overflow: 'hidden'
+            }}>
+                <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: '700', textTransform: 'uppercase', fontSize: '12px', letterSpacing: '0.1em', color: '#888' }}>{activeTab}</span>
+                    <XCircle size={20} onClick={() => setShowSidePanel(false)} style={{ cursor: 'pointer', color: '#666' }} />
+                </div>
+                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: activeTab === 'chat' ? 'contents' : 'none' }}>
+                        <Chat socket={socket} roomId={roomId} username={username} />
                     </div>
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                        {activeTab === 'chat' && <Chat socket={socket} roomId={roomId} username={username} />}
-                        {activeTab === 'whiteboard' && <div style={{ height: '100%', padding: '10px' }}><Whiteboard socket={socket} roomId={roomId} /></div>}
-                        {activeTab === 'tools' && <div style={{ padding: '20px' }}><PomodoroTimer socket={socket} roomId={roomId} /></div>}
-                        {activeTab === 'share' && (
-                            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                                <div style={{ padding: '20px' }}>
-                                    <button
-                                        onClick={handleScreenShare}
-                                        style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: isScreenSharing ? '#ef4444' : '#333', color: 'white', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                        {isScreenSharing ? <><XCircle size={18} /> Stop Sharing</> : <><Monitor size={18} /> Share Screen</>}
-                                    </button>
-                                </div>
-                                <div style={{ flex: 1, overflow: 'hidden' }}>
-                                    <Resources socket={socket} roomId={roomId} username={username} />
-                                </div>
-                            </div>
-                        )}
+                    <div style={{ display: activeTab === 'whiteboard' ? 'contents' : 'none', height: '100%', padding: '10px' }}>
+                        <Whiteboard socket={socket} roomId={roomId} />
+                    </div>
+                    <div style={{ display: activeTab === 'tools' ? 'contents' : 'none', padding: '20px' }}>
+                        <PomodoroTimer socket={socket} roomId={roomId} />
+                    </div>
+                    <div style={{ display: activeTab === 'share' ? 'flex' : 'none', height: '100%', flexDirection: 'column' }}>
+                        <div style={{ padding: '20px' }}>
+                            <button
+                                onClick={handleScreenShare}
+                                style={{ width: '100%', padding: '12px', borderRadius: '12px', border: 'none', background: isScreenSharing ? '#ef4444' : '#333', color: 'white', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                {isScreenSharing ? <><XCircle size={18} /> Stop Sharing</> : <><Monitor size={18} /> Share Screen</>}
+                            </button>
+                        </div>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                            <Resources socket={socket} roomId={roomId} username={username} />
+                        </div>
                     </div>
                 </div>
-            )}
+            </div>
 
             <style>{`
                 @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+                @keyframes bounce { 
+                    0% { transform: scale(0.3); opacity: 0; }
+                    50% { transform: scale(1.1); }
+                    70% { transform: scale(0.9); }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+                @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
                 .video-grid {
                     display: grid;
