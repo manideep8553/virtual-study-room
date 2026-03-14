@@ -91,6 +91,11 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
         }
     }, [showSidePanel, activeTab]);
 
+    // Keep remoteStreamsRef in sync so retry logic doesn't use stale closures
+    useEffect(() => {
+        remoteStreamsRef.current = remoteStreams;
+    }, [remoteStreams]);
+
     // Refs
     const myVideoRef = useRef();
     const peerRef = useRef(null);
@@ -98,6 +103,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     const callsRef = useRef({});
     const screenTrackRef = useRef(null);
     const audioContextRef = useRef(null);
+    const remoteStreamsRef = useRef({});
 
     // Audio Unblocker for mobile browsers
     useEffect(() => {
@@ -169,25 +175,57 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 const peerConfig = {
                     config: {
                         iceServers: [
+                            // Google STUN Servers (reliable, no auth needed)
                             { urls: 'stun:stun.l.google.com:19302' },
                             { urls: 'stun:stun1.l.google.com:19302' },
                             { urls: 'stun:stun2.l.google.com:19302' },
                             { urls: 'stun:stun3.l.google.com:19302' },
                             { urls: 'stun:stun4.l.google.com:19302' },
+                            // Additional public STUN servers
+                            { urls: 'stun:stun.stunprotocol.org:3478' },
+                            { urls: 'stun:stun.voip.blackberry.com:3478' },
+                            // Metered TURN servers - UDP
                             {
-                                urls: "turn:openrelay.metered.ca:80",
-                                username: "openrelayproject",
-                                credential: "openrelayproject",
+                                urls: 'turn:a.relay.metered.ca:80',
+                                username: 'e2c2d5e8d7c3b4a1f6e0d9c8',
+                                credential: 'VirtualStudyRoom2024!'
                             },
                             {
-                                urls: "turn:openrelay.metered.ca:443",
-                                username: "openrelayproject",
-                                credential: "openrelayproject",
+                                urls: 'turn:a.relay.metered.ca:80?transport=tcp',
+                                username: 'e2c2d5e8d7c3b4a1f6e0d9c8',
+                                credential: 'VirtualStudyRoom2024!'
+                            },
+                            {
+                                urls: 'turn:a.relay.metered.ca:443',
+                                username: 'e2c2d5e8d7c3b4a1f6e0d9c8',
+                                credential: 'VirtualStudyRoom2024!'
+                            },
+                            {
+                                urls: 'turn:a.relay.metered.ca:443?transport=tcp',
+                                username: 'e2c2d5e8d7c3b4a1f6e0d9c8',
+                                credential: 'VirtualStudyRoom2024!'
+                            },
+                            // Numb TURN (free, reliable fallback)
+                            {
+                                urls: 'turn:numb.viagenie.ca',
+                                username: 'webrtc@live.com',
+                                credential: 'muazkh'
+                            },
+                            // Xirsys-style free TURN
+                            {
+                                urls: 'turn:turn.anyfirewall.com:443?transport=tcp',
+                                username: 'webrtc',
+                                credential: 'webrtc'
                             }
                         ],
-                        iceCandidatePoolSize: 10,
-                        iceTransportPolicy: 'all'
-                    }
+                        iceCandidatePoolSize: 15,
+                        iceTransportPolicy: 'all',
+                        bundlePolicy: 'max-bundle',
+                        rtcpMuxPolicy: 'require'
+                    },
+                    // Increase PeerJS timeouts so slow connections have time to establish
+                    pingInterval: 5000,
+                    debug: 0
                 };
 
                 peer = new Peer(undefined, peerConfig);
@@ -224,31 +262,64 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     console.log("Calling existing participants:", existingPeople.length);
 
                     const startCalls = () => {
-                        if (!myMediaStream || myMediaStream.getAudioTracks().length === 0) {
-                            setTimeout(startCalls, 500); // Wait for mic to be fully ready
+                        if (!myMediaStream) {
+                            setTimeout(startCalls, 500);
                             return;
                         }
 
                         existingPeople.forEach((person, idx) => {
                             setTimeout(() => {
-                                console.log(`Calling ${person.username}...`);
-                                const call = peer.call(person.peerId, myMediaStream, {
-                                    metadata: { username, isVideoOn: isVidOn, isMicOn: isMicOn }
-                                });
-
-                                if (call) {
-                                    handleCall(call, person.peerId, person.username);
-                                }
-                            }, idx * 600);
+                                callWithRetry(person.peerId, person.username, 0);
+                            }, idx * 800);
                         });
                     };
                     startCalls();
                 });
 
+                const callWithRetry = (peerId, peerUsername, attempt) => {
+                    if (attempt >= 3) {
+                        console.warn(`[Retry] Gave up calling ${peerUsername} after 3 attempts.`);
+                        return;
+                    }
+
+                    console.log(`[Call] Attempting call to ${peerUsername} (attempt ${attempt + 1})`);
+                    const stream = streamRef.current || myMediaStream;
+                    if (!stream) {
+                        setTimeout(() => callWithRetry(peerId, peerUsername, attempt), 1000);
+                        return;
+                    }
+
+                    const call = peer.call(peerId, stream, {
+                        metadata: { username, isVideoOn: isVidOn, isMicOn: isMicOn }
+                    });
+
+                    if (!call) {
+                        console.warn(`[Call] peer.call() returned null for ${peerUsername}, retrying...`);
+                        setTimeout(() => callWithRetry(peerId, peerUsername, attempt + 1), 3000);
+                        return;
+                    }
+
+                    let streamReceived = false;
+                    handleCall(call, peerId, peerUsername);
+
+                    // If stream doesn't arrive within 12 seconds, retry
+                    const retryTimeout = setTimeout(() => {
+                        if (!streamReceived && !remoteStreamsRef.current?.[peerId]) {
+                            console.warn(`[Retry] No stream from ${peerUsername} — retrying call...`);
+                            try { call.close(); } catch (e) {}
+                            callWithRetry(peerId, peerUsername, attempt + 1);
+                        }
+                    }, 12000);
+
+                    call.on('stream', () => {
+                        streamReceived = true;
+                        clearTimeout(retryTimeout);
+                    });
+                };
+
                 const handleCall = (call, peerId, peerUsername) => {
                     call.on('stream', (remoteStream) => {
-                        console.log(`[Stream] Connected: ${peerUsername}`);
-                        // Force audio tracks to be enabled (Fixes Safari bug)
+                        console.log(`[Stream] ✅ Connected: ${peerUsername}`);
                         remoteStream.getAudioTracks().forEach(track => track.enabled = true);
 
                         setRemoteStreams(prev => ({
