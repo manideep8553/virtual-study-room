@@ -170,60 +170,36 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     streamRef.current = myMediaStream;
                 }
 
-                // 2. Create Peer
+                // 2. Fetch live Cloudflare TURN credentials from our server
                 setStatus('Establishing connection...');
+                let iceServers = [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ];
+                try {
+                    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+                    const resp = await fetch(`${backendUrl}/api/ice-servers`);
+                    if (resp.ok) {
+                        const cfServers = await resp.json();
+                        // Merge Cloudflare TURN + Google STUN as fallback
+                        if (Array.isArray(cfServers) && cfServers.length > 0) {
+                            iceServers = [...iceServers, ...cfServers];
+                            console.log('[TURN] ✅ Cloudflare ICE servers loaded:', cfServers.length);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[TURN] Could not fetch Cloudflare credentials, using STUN only:', e.message);
+                }
+
                 const peerConfig = {
                     config: {
-                        iceServers: [
-                            // Google STUN Servers (reliable, no auth needed)
-                            { urls: 'stun:stun.l.google.com:19302' },
-                            { urls: 'stun:stun1.l.google.com:19302' },
-                            { urls: 'stun:stun2.l.google.com:19302' },
-                            { urls: 'stun:stun3.l.google.com:19302' },
-                            { urls: 'stun:stun4.l.google.com:19302' },
-                            // Additional public STUN servers
-                            { urls: 'stun:stun.stunprotocol.org:3478' },
-                            { urls: 'stun:stun.voip.blackberry.com:3478' },
-                            // Metered TURN servers - UDP
-                            {
-                                urls: 'turn:a.relay.metered.ca:80',
-                                username: 'e2c2d5e8d7c3b4a1f6e0d9c8',
-                                credential: 'VirtualStudyRoom2024!'
-                            },
-                            {
-                                urls: 'turn:a.relay.metered.ca:80?transport=tcp',
-                                username: 'e2c2d5e8d7c3b4a1f6e0d9c8',
-                                credential: 'VirtualStudyRoom2024!'
-                            },
-                            {
-                                urls: 'turn:a.relay.metered.ca:443',
-                                username: 'e2c2d5e8d7c3b4a1f6e0d9c8',
-                                credential: 'VirtualStudyRoom2024!'
-                            },
-                            {
-                                urls: 'turn:a.relay.metered.ca:443?transport=tcp',
-                                username: 'e2c2d5e8d7c3b4a1f6e0d9c8',
-                                credential: 'VirtualStudyRoom2024!'
-                            },
-                            // Numb TURN (free, reliable fallback)
-                            {
-                                urls: 'turn:numb.viagenie.ca',
-                                username: 'webrtc@live.com',
-                                credential: 'muazkh'
-                            },
-                            // Xirsys-style free TURN
-                            {
-                                urls: 'turn:turn.anyfirewall.com:443?transport=tcp',
-                                username: 'webrtc',
-                                credential: 'webrtc'
-                            }
-                        ],
+                        iceServers,
                         iceCandidatePoolSize: 15,
                         iceTransportPolicy: 'all',
                         bundlePolicy: 'max-bundle',
                         rtcpMuxPolicy: 'require'
                     },
-                    // Increase PeerJS timeouts so slow connections have time to establish
                     pingInterval: 5000,
                     debug: 0
                 };

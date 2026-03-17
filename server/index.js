@@ -1,12 +1,58 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
 const app = express();
 app.use(cors());
+app.use(express.json());
+
+// Cloudflare TURN credential generator
+async function getCloudflareICEServers() {
+    return new Promise((resolve, reject) => {
+        const body = JSON.stringify({ ttl: 86400 }); // 24-hour credentials
+        const options = {
+            hostname: 'rtc.live.cloudflare.com',
+            path: `/v1/turn/keys/${process.env.CF_TURN_TOKEN_ID}/credentials/generate`,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.CF_TURN_API_TOKEN}`,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+            }
+        };
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(e); }
+            });
+        });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+    });
+}
+
+// REST endpoint — client fetches fresh TURN credentials before each call
+app.get('/api/ice-servers', async (req, res) => {
+    try {
+        const data = await getCloudflareICEServers();
+        // data.iceServers contains urls, username, credential
+        res.json(data.iceServers || data);
+    } catch (err) {
+        console.error('Cloudflare TURN error:', err.message);
+        // Fallback to Google STUN if Cloudflare fails
+        res.json([
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ]);
+    }
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
