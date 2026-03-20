@@ -3,14 +3,14 @@ import Editor from '@monaco-editor/react';
 import { Play, Share2, Users, Lock, Terminal, ChevronDown, Code2, Loader2, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 
 const LANGUAGES = [
-    { id: 'python', label: 'Python', pistonLang: 'python', pistonVersion: '3.10.0', defaultCode: '# Write your Python code here\ndef solve(n):\n    return n * 2\n\nn = int(input())\nprint(solve(n))\n' },
-    { id: 'javascript', label: 'JavaScript', pistonLang: 'javascript', pistonVersion: '18.15.0', defaultCode: '// Write your JavaScript code here\nconst lines = require("fs").readFileSync("/dev/stdin","utf8").trim().split("\\n");\nconst n = parseInt(lines[0]);\nconsole.log(n * 2);\n' },
-    { id: 'java', label: 'Java', pistonLang: 'java', pistonVersion: '15.0.2', defaultCode: 'import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        System.out.println(n * 2);\n    }\n}\n' },
-    { id: 'cpp', label: 'C++', pistonLang: 'c++', pistonVersion: '10.2.0', defaultCode: '#include<bits/stdc++.h>\nusing namespace std;\n\nint main(){\n    int n;\n    cin >> n;\n    cout << n * 2 << endl;\n    return 0;\n}\n' },
-    { id: 'c', label: 'C', pistonLang: 'c', pistonVersion: '10.2.0', defaultCode: '#include<stdio.h>\n\nint main(){\n    int n;\n    scanf("%d", &n);\n    printf("%d\\n", n * 2);\n    return 0;\n}\n' },
+    { id: 'python', label: 'Python', judge0Id: 71, defaultCode: '# Write your Python code here\ndef solve(n):\n    return n * 2\n\nn = int(input())\nprint(solve(n))\n' },
+    { id: 'javascript', label: 'JavaScript', judge0Id: 63, defaultCode: '// Write your JavaScript code here\nconst fs = require("fs");\nconst input = fs.readFileSync("/dev/stdin", "utf-8").trim();\nif(input) console.log(parseInt(input) * 2);\n' },
+    { id: 'java', label: 'Java', judge0Id: 62, defaultCode: 'import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        System.out.println(n * 2);\n    }\n}\n' },
+    { id: 'cpp', label: 'C++', judge0Id: 54, defaultCode: '#include<iostream>\nusing namespace std;\n\nint main(){\n    int n;\n    cin >> n;\n    cout << n * 2 << endl;\n    return 0;\n}\n' },
+    { id: 'c', label: 'C', judge0Id: 50, defaultCode: '#include<stdio.h>\n\nint main(){\n    int n;\n    scanf("%d", &n);\n    printf("%d\\n", n * 2);\n    return 0;\n}\n' },
 ];
 
-const PISTON_URL = 'https://emkc.org/api/v2/piston/execute';
+const JUDGE0_URL = 'https://ce.judge0.com/submissions?base64_encoded=false&wait=true';
 
 const CodeEditor = ({ socket, roomId, username }) => {
     const [code, setCode] = useState(LANGUAGES[0].defaultCode);
@@ -104,23 +104,26 @@ const CodeEditor = ({ socket, roomId, username }) => {
         setIsRunning(true);
         setOutput(null);
         try {
-            const resp = await fetch(PISTON_URL, {
+            const resp = await fetch(JUDGE0_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    language: language.pistonLang,
-                    version: language.pistonVersion,
-                    files: [{ content: codeRef.current }],
-                    stdin: testInput
+                    source_code: codeRef.current,
+                    language_id: language.judge0Id,
+                    stdin: testInput || ""
                 })
             });
             const data = await resp.json();
+            
+            // Judge0 returns base64_encoded=false, so we get plain strings
+            const isError = data.status?.id > 3; // Status > 3 Usually means compilation error, runtime error, etc
             const result = {
-                stdout: data.run?.stdout || '',
-                stderr: data.run?.stderr || data.compile?.stderr || '',
-                exitCode: data.run?.code ?? data.compile?.code ?? 0,
+                stdout: data.stdout || '',
+                stderr: data.compile_output || data.stderr || data.message || '',
+                exitCode: isError ? 1 : 0,
                 language: language.label
             };
+            
             setOutput(result);
             setIsRunning(false);
 

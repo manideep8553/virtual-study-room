@@ -125,26 +125,30 @@ const ResourceModel = mongoose.model('Resource', resourceSchema);
 
 // Seed Initial Rooms if DB is empty
 async function seedRooms() {
-  const count = await RoomModel.countDocuments();
+  try {
+    const count = await RoomModel.countDocuments();
 
-  // GLOBAL CLEANUP: Every time the server starts, we wipe the chat and resources
-  // This ensures the "Virtual Room" doesn't have 4-day old messages from dead sessions.
-  console.log('🧹 Performing Global Session Cleanup...');
-  await Promise.all([
-    MessageModel.deleteMany({}),
-    ResourceModel.deleteMany({})
-  ]);
-  console.log('✅ Chat and Resources reset for fresh session.');
+    // GLOBAL CLEANUP: Every time the server starts, we wipe the chat and resources
+    // This ensures the "Virtual Room" doesn't have 4-day old messages from dead sessions.
+    console.log('🧹 Performing Global Session Cleanup...');
+    await Promise.all([
+      MessageModel.deleteMany({}),
+      ResourceModel.deleteMany({})
+    ]);
+    console.log('✅ Chat and Resources reset for fresh session.');
 
-  if (count === 0) {
-    const defaultRooms = [
-      { id: 'maths', name: 'Mathematics & Calculus', description: 'Advanced calculus and linear algebra collaboration group.', tag: 'Academic' },
-      { id: 'social', name: 'Social Studies & History', description: 'Discussing world history and modern social structures.', tag: 'Theories' },
-      { id: 'design', name: 'UI/UX Design Studio', description: 'Creative workspace for designers and front-end devs.', tag: 'Creative' },
-      { id: 'coding', name: 'Competitive Coding', description: 'Algorithms, data structures and LeetCode problems.', tag: 'Technical' }
-    ];
-    await RoomModel.insertMany(defaultRooms);
-    console.log('Default rooms seeded in MongoDB');
+    if (count === 0) {
+      const defaultRooms = [
+        { id: 'maths', name: 'Mathematics & Calculus', description: 'Advanced calculus and linear algebra collaboration group.', tag: 'Academic' },
+        { id: 'social', name: 'Social Studies & History', description: 'Discussing world history and modern social structures.', tag: 'Theories' },
+        { id: 'design', name: 'UI/UX Design Studio', description: 'Creative workspace for designers and front-end devs.', tag: 'Creative' },
+        { id: 'coding', name: 'Competitive Coding', description: 'Algorithms, data structures and LeetCode problems.', tag: 'Technical' }
+      ];
+      await RoomModel.insertMany(defaultRooms);
+      console.log('Default rooms seeded in MongoDB');
+    }
+  } catch (dbErr) {
+    console.log('⚠️ Database initialization failed. Continuing falling back to in-memory state.', dbErr.message);
   }
 }
 seedRooms();
