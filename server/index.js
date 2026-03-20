@@ -536,6 +536,23 @@ io.on('connection', (socket) => {
       console.log("Summary generation error:", err);
     }
   });
+
+  // Editor & Whiteboard Sync
+  socket.on('whiteboard_update', (data) => {
+    socket.to(data.roomId).emit('whiteboard_update', data);
+  });
+
+  socket.on('code_update', (data) => {
+    socket.to(data.roomId).emit('code_update', data);
+  });
+
+  socket.on('code_change', (data) => {
+    socket.to(data.roomId).emit('code_change', data);
+  });
+
+  socket.on('code_run_result', (data) => {
+    socket.to(data.roomId).emit('code_run_result', data);
+  });
 });
 
 const PORT = process.env.PORT || 3001;

@@ -1,11 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { Share2, Users, Lock, XCircle } from 'lucide-react';
 
-const Whiteboard = ({ socket, roomId }) => {
+const Whiteboard = ({ socket, roomId, username }) => {
     const canvasRef = useRef(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [color, setColor] = useState('#8b5cf6');
     const [tool, setTool] = useState('pen'); // 'pen', 'marker', 'highlighter', 'eraser'
-    const [isSharing, setIsSharing] = useState(false);
+    const [shareMode, setShareMode] = useState('private'); // 'private' | 'view' | 'edit'
+    const [sharedBy, setSharedBy] = useState(null);
     const contextRef = useRef(null);
     const lastPos = useRef({ x: 0, y: 0 });
 
@@ -18,9 +20,7 @@ const Whiteboard = ({ socket, roomId }) => {
             const rect = parent.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) return;
 
-            // Preserve current drawing
             const tempImage = canvas.toDataURL();
-
             canvas.width = rect.width * 2;
             canvas.height = rect.height * 2;
             canvas.style.width = `${rect.width}px`;
@@ -32,7 +32,6 @@ const Whiteboard = ({ socket, roomId }) => {
             context.lineJoin = 'round';
             contextRef.current = context;
 
-            // Restore drawing
             const img = new Image();
             img.src = tempImage;
             img.onload = () => {
@@ -40,9 +39,7 @@ const Whiteboard = ({ socket, roomId }) => {
             };
         };
 
-        const resizeObserver = new ResizeObserver(() => {
-            resizeCanvas();
-        });
+        const resizeObserver = new ResizeObserver(() => resizeCanvas());
         resizeObserver.observe(parent);
 
         const handleDraw = ({ x0, y0, x1, y1, color, thickness, opacity }) => {
@@ -61,22 +58,54 @@ const Whiteboard = ({ socket, roomId }) => {
 
         const handleClear = () => {
             const ctx = contextRef.current;
-            const canvas = canvasRef.current;
-            if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const cvs = canvasRef.current;
+            if (ctx && cvs) ctx.clearRect(0, 0, cvs.width, cvs.height);
+        };
+
+        const handleWhiteboardUpdate = ({ shareMode: mode, sharedBy: by, image }) => {
+            if (mode) setShareMode(mode);
+            if (by) setSharedBy(by);
+            if (image) {
+                const img = new Image();
+                img.src = image;
+                img.onload = () => {
+                    const ctx = contextRef.current;
+                    const c = canvasRef.current;
+                    ctx.clearRect(0, 0, c.width, c.height);
+                    ctx.drawImage(img, 0, 0, c.width / 2, c.height / 2);
+                };
+            }
         };
 
         socket.on('draw-line', handleDraw);
         socket.on('clear-canvas', handleClear);
+        socket.on('whiteboard_update', handleWhiteboardUpdate);
 
-        // Initial resize
         resizeCanvas();
 
         return () => {
             resizeObserver.disconnect();
             socket.off('draw-line');
             socket.off('clear-canvas');
+            socket.off('whiteboard_update');
         };
     }, [socket, roomId]);
+
+    const handleShareMode = (mode) => {
+        setShareMode(mode);
+        setSharedBy(username);
+        
+        // Sync current canvas state to newcomers when we share
+        const canvas = canvasRef.current;
+        const image = canvas ? canvas.toDataURL() : null;
+
+        socket?.emit('whiteboard_update', {
+            roomId,
+            shareMode: mode,
+            sharedBy: username,
+            image
+        });
+    };
 
     const getToolSettings = () => {
         switch (tool) {
@@ -91,26 +120,16 @@ const Whiteboard = ({ socket, roomId }) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-
-        let clientX = 0;
-        let clientY = 0;
-
-        if (e.touches && e.touches.length > 0) {
-            clientX = e.touches[0].clientX;
-            clientY = e.touches[0].clientY;
-        } else {
-            clientX = e.clientX;
-            clientY = e.clientY;
-        }
-
-        // Return coordinates relative to the canvas CSS size
-        return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
-        };
+        let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: clientX - rect.left, y: clientY - rect.top };
     };
 
+    const isReadOnly = shareMode === 'view' && sharedBy !== username;
+    const canDraw = shareMode === 'private' || shareMode === 'edit' || sharedBy === username;
+
     const handleStart = (e) => {
+        if (!canDraw) return;
         if (e.type === 'touchstart') e.preventDefault();
         const { x, y } = getCoordinates(e);
         lastPos.current = { x, y };
@@ -118,15 +137,13 @@ const Whiteboard = ({ socket, roomId }) => {
     };
 
     const handleMove = (e) => {
-        if (!isDrawing) return;
+        if (!isDrawing || !canDraw) return;
         if (e.type === 'touchmove') e.preventDefault();
 
         const { x, y } = getCoordinates(e);
         const { thickness, opacity, strokeColor } = getToolSettings();
         const x0 = lastPos.current.x;
         const y0 = lastPos.current.y;
-        const x1 = x;
-        const y1 = y;
 
         const ctx = contextRef.current;
         if (!ctx) return;
@@ -136,29 +153,38 @@ const Whiteboard = ({ socket, roomId }) => {
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = thickness;
         ctx.moveTo(x0, y0);
-        ctx.lineTo(x1, y1);
+        ctx.lineTo(x, y);
         ctx.stroke();
         ctx.closePath();
         ctx.globalAlpha = 1.0;
 
-        if (isSharing) {
-            socket.emit('draw-line', { roomId, x0, y0, x1, y1, color: strokeColor, thickness, opacity });
+        if (shareMode !== 'private') {
+            socket.emit('draw-line', { roomId, x0, y0, x1: x, y1: y, color: strokeColor, thickness, opacity });
         }
 
-        lastPos.current = { x: x1, y: y1 };
+        lastPos.current = { x, y };
     };
 
     const handleEnd = () => setIsDrawing(false);
 
     const clearCanvas = () => {
+        if (!canDraw) return;
         const canvas = canvasRef.current;
         const ctx = contextRef.current;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (isSharing) socket.emit('clear-canvas', roomId);
+        if (shareMode !== 'private') socket.emit('clear-canvas', roomId);
     };
 
     return (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#f8fafc', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.1)' }}>
+            
+            {/* ── Read-only Banner ── */}
+            {isReadOnly && (
+                <div style={{ padding: '8px 16px', background: 'rgba(31, 111, 235, 0.1)', borderBottom: '1px solid rgba(31, 111, 235, 0.3)', fontSize: '12px', color: '#58a6ff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Lock size={12} /> You are viewing {sharedBy}'s whiteboard — read only. They can enable "Edit" to let everyone draw.
+                </div>
+            )}
+
             {/* Toolbar Top */}
             <div style={{ padding: '16px', background: '#fff', borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px' }}>
                 <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
@@ -172,16 +198,11 @@ const Whiteboard = ({ socket, roomId }) => {
                             key={t.id}
                             onClick={() => setTool(t.id)}
                             style={{
-                                padding: '6px 12px',
-                                borderRadius: '8px',
-                                border: 'none',
+                                padding: '6px 12px', borderRadius: '8px', border: 'none',
                                 background: tool === t.id ? '#fff' : 'transparent',
                                 color: tool === t.id ? '#0f172a' : '#64748b',
-                                fontSize: '11px',
-                                fontWeight: '700',
-                                cursor: 'pointer',
-                                boxShadow: tool === t.id ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
-                                transition: 'all 0.2s'
+                                fontSize: '11px', fontWeight: '700', cursor: 'pointer',
+                                boxShadow: tool === t.id ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
                             }}
                         >
                             {t.label.toUpperCase()}
@@ -196,40 +217,38 @@ const Whiteboard = ({ socket, roomId }) => {
                                 key={c}
                                 onClick={() => setColor(c)}
                                 style={{
-                                    width: '20px',
-                                    height: '20px',
-                                    borderRadius: '50%',
-                                    background: c,
+                                    width: '20px', height: '20px', borderRadius: '50%', background: c,
                                     border: color === c ? '2px solid #fff' : 'none',
-                                    boxShadow: color === c ? '0 0 0 2px #8b5cf6' : 'none',
-                                    cursor: 'pointer'
+                                    boxShadow: color === c ? '0 0 0 2px #8b5cf6' : 'none', cursor: 'pointer'
                                 }}
                             />
                         ))}
                     </div>
                 )}
 
-                <button
-                    onClick={() => setIsSharing(!isSharing)}
-                    style={{
-                        marginLeft: 'auto',
-                        padding: '8px 16px',
-                        borderRadius: '10px',
-                        border: 'none',
-                        background: isSharing ? '#10b981' : '#64748b',
-                        color: 'white',
-                        fontWeight: '800',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        boxShadow: isSharing ? '0 4px 12px rgba(16,185,129,0.3)' : 'none'
-                    }}
-                >
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#fff', opacity: isSharing ? 1 : 0.4 }}></div>
-                    {isSharing ? 'SHARING LIVE' : 'SHARE TO ALL'}
-                </button>
+                {/* Share Mode Buttons */}
+                <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0', marginLeft: 'auto' }}>
+                    {[
+                        { mode: 'private', icon: <Lock size={13} />, label: 'Private', color: '#64748b' },
+                        { mode: 'view',    icon: <Share2 size={13} />, label: 'Share', color: '#10b981' },
+                        { mode: 'edit',    icon: <Users size={13} />, label: 'Edit', color: '#1f6feb' },
+                    ].map(({ mode, icon, label, color }) => (
+                        <button
+                            key={mode}
+                            onClick={() => handleShareMode(mode)}
+                            title={label}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '5px',
+                                padding: '8px 16px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                                background: shareMode === mode ? color : 'transparent',
+                                color: shareMode === mode ? '#fff' : '#64748b',
+                                transition: 'all 0.15s'
+                            }}
+                        >
+                            {icon} {label}
+                        </button>
+                    ))}
+                </div>
 
                 <button
                     onClick={clearCanvas}
@@ -239,7 +258,7 @@ const Whiteboard = ({ socket, roomId }) => {
                 </button>
             </div>
 
-            <div style={{ flex: 1, position: 'relative', cursor: tool === 'eraser' ? 'cell' : 'crosshair', background: '#fff', touchAction: 'none' }}>
+            <div style={{ flex: 1, position: 'relative', cursor: isReadOnly ? 'not-allowed' : (tool === 'eraser' ? 'cell' : 'crosshair'), background: '#fff', touchAction: 'none' }}>
                 <canvas
                     ref={canvasRef}
                     onMouseDown={handleStart}

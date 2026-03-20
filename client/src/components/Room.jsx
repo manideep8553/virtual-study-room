@@ -5,7 +5,8 @@ import PomodoroTimer from './PomodoroTimer';
 import Resources from './Resources';
 import Whiteboard from './Whiteboard';
 import Summarizer from './Summarizer';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle, PenTool, Hand, Wand2 } from 'lucide-react';
+import CodeEditor from './CodeEditor';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Shield, User, LayoutGrid, Timer, Monitor, XCircle, PenTool, Hand, Wand2, Code2 } from 'lucide-react';
 
 const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     // State
@@ -771,6 +772,9 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     <button onClick={() => { setActiveTab('participants'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'participants' ? 'active' : ''}`} title="Participants">
                         <Users size={20} />
                     </button>
+                    <button onClick={() => { setActiveTab('code'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'code' ? 'active' : ''}`} title="Code Editor">
+                        <Code2 size={20} />
+                    </button>
                     <button onClick={() => { setActiveTab('whiteboard'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'whiteboard' ? 'active' : ''}`} title="Whiteboard">
                         <PenTool size={20} />
                     </button>
@@ -792,7 +796,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
 
             {/* Side Panel */}
             < div style={{
-                width: showSidePanel ? '380px' : '0px',
+                width: showSidePanel ? (['whiteboard', 'code'].includes(activeTab) ? '650px' : '380px') : '0px',
                 opacity: showSidePanel ? 1 : 0,
                 pointerEvents: showSidePanel ? 'auto' : 'none',
                 background: '#0f0f0f',
@@ -862,10 +866,13 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                         </div>
                     </div>
                     <div style={{ display: activeTab === 'whiteboard' ? 'contents' : 'none', height: '100%', padding: '10px' }}>
-                        <Whiteboard socket={socket} roomId={roomId} />
+                        <Whiteboard socket={socket} roomId={roomId} username={username} />
                     </div>
                     <div style={{ display: activeTab === 'tools' ? 'contents' : 'none', padding: '20px' }}>
                         <PomodoroTimer socket={socket} roomId={roomId} />
+                    </div>
+                    <div style={{ display: activeTab === 'code' ? 'contents' : 'none', height: '100%' }}>
+                        <CodeEditor socket={socket} roomId={roomId} username={username} />
                     </div>
                     <div style={{ display: activeTab === 'ai' ? 'contents' : 'none', height: '100%' }}>
                         <Summarizer socket={socket} roomId={roomId} />
