@@ -26,6 +26,8 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
     const [isRenamingUser, setIsRenamingUser] = useState(false);
     const [tempName, setTempName] = useState(username);
     const [roomTimer, setRoomTimer] = useState({ timeLeft: 25 * 60, isActive: false, mode: 'focus' });
+    const [showControls, setShowControls] = useState(false);
+    const hideTimerRef = useRef(null);
 
     // Global Timer Sync for "Dynamic Island"
     useEffect(() => {
@@ -534,7 +536,18 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
             overflow: 'hidden',
             display: 'flex'
         }}>
-            <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+            <div
+                style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', cursor: showControls ? 'default' : 'none' }}
+                onMouseMove={() => {
+                    setShowControls(true);
+                    clearTimeout(hideTimerRef.current);
+                    hideTimerRef.current = setTimeout(() => setShowControls(false), 3000);
+                }}
+                onMouseLeave={() => {
+                    clearTimeout(hideTimerRef.current);
+                    hideTimerRef.current = setTimeout(() => setShowControls(false), 1000);
+                }}
+            >
                 {/* Minimal Overlay Header */}
                 <div style={{
                     position: 'absolute',
@@ -721,7 +734,9 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     position: 'absolute',
                     bottom: '32px',
                     left: '50%',
-                    transform: 'translateX(-50%)',
+                    transform: showControls ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(120px)',
+                    opacity: showControls ? 1 : 0,
+                    pointerEvents: showControls ? 'auto' : 'none',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
@@ -731,7 +746,8 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                     borderRadius: '100px',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
                     boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
-                    zIndex: 200
+                    zIndex: 200,
+                    transition: 'opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
                 }}>
                     <button onClick={toggleMic} className={`control-btn ${!isMicOn ? 'off' : ''}`} title="Mute/Unmute">
                         {isMicOn ? <Mic size={20} /> : <MicOff size={20} />}

@@ -201,6 +201,9 @@ async function broadcastRoomUpdate(roomId) {
   console.log(`Room [${roomId}]: ${count} active`);
 }
 
+// Single-Session Enforcement: email -> socketId
+const activeUserSessions = new Map();
+
 io.on('connection', (socket) => {
   console.log(` Socket connected: ${socket.id}`);
 
@@ -214,10 +217,31 @@ io.on('connection', (socket) => {
   // User Auth / Persistence
   socket.on('register_user', async (userData) => {
     try {
-      const mode = userData.mode || 'login'; // default to login for safety
+      const mode = userData.mode || 'login';
+      if (!userData.email) {
+        return socket.emit('auth_error', 'Email is required for authentication.');
+      }
+
+      // iOS/iPad AutoFill often adds spaces or capitalizes emails, breaking MongoDB lookups
+      const sanitizedEmail = userData.email.trim().toLowerCase();
+
+      // ── Single-Session Enforcement ──
+      const existingSocketId = activeUserSessions.get(sanitizedEmail);
+      if (existingSocketId && existingSocketId !== socket.id) {
+        // Kick old session immediately
+        const oldSocket = io.sockets.sockets.get(existingSocketId);
+        if (oldSocket) {
+          oldSocket.emit('force_logout', '⚠️ Your account was signed in on another device. You have been logged out.');
+          oldSocket.disconnect(true);
+        }
+        console.log(`🔄 Session replaced for ${sanitizedEmail} — old socket ${existingSocketId} kicked.`);
+      }
+      // Register new session
+      activeUserSessions.set(sanitizedEmail, socket.id);
+      socket.data.email = sanitizedEmail; // Save for disconnect cleanup
 
       // Try finding by email
-      let user = await UserModel.findOne({ email: userData.email });
+      let user = await UserModel.findOne({ email: sanitizedEmail });
 
       if (mode === 'login') {
         if (!user) {
@@ -232,10 +256,10 @@ io.on('connection', (socket) => {
         }
 
         // Create new user
-        const nameToUse = userData.name || userData.email.split('@')[0];
+        const nameToUse = userData.name || sanitizedEmail.split('@')[0];
         user = await UserModel.create({
           name: nameToUse,
-          email: userData.email,
+          email: sanitizedEmail,
           avatar: nameToUse.charAt(0).toUpperCase()
         });
         console.log(`👤 New user registered: ${user.name}`);
@@ -556,6 +580,15 @@ io.on('connection', (socket) => {
 
   socket.on('code_run_result', (data) => {
     socket.to(data.roomId).emit('code_run_result', data);
+  });
+
+  // Cleanup session on disconnect
+  socket.on('disconnect', () => {
+    const email = socket.data.email;
+    if (email && activeUserSessions.get(email) === socket.id) {
+      activeUserSessions.delete(email);
+      console.log(`👋 Session freed for ${email}`);
+    }
   });
 });
 

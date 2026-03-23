@@ -45,10 +45,24 @@ function App() {
       console.log("Socket Connected:", socket.id);
     });
 
+    // If same account logs in elsewhere, kick this session out
+    const handleForceLogout = (message) => {
+      localStorage.removeItem('vstudy_user');
+      setIsLoggedIn(false);
+      setCurrentUser(null);
+      setCurrentPage('rooms');
+      setCurrentRoom(null);
+      setAuthMode('login');
+      alert(message || '⚠️ You were logged in from another device. This session has been ended.');
+    };
+
+    socket.on('force_logout', handleForceLogout);
+
     return () => {
       socket.off('user_registered', handleUserRegistered);
       socket.off('connect_error');
       socket.off('connect');
+      socket.off('force_logout', handleForceLogout);
     };
   }, []);
 
