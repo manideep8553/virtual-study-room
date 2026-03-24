@@ -116,11 +116,13 @@ const CodeEditor = ({ socket, roomId, username }) => {
             const data = await resp.json();
             
             // Judge0 returns base64_encoded=false, so we get plain strings
-            const isError = data.status?.id > 3; // Status > 3 Usually means compilation error, runtime error, etc
+            const isError = data.status?.id > 3; 
+            const hasCompileError = !!data.compile_output;
             const result = {
                 stdout: data.stdout || '',
                 stderr: data.compile_output || data.stderr || data.message || '',
                 exitCode: isError ? 1 : 0,
+                status: data.status?.description || (isError ? 'Error' : 'Success'),
                 language: language.label
             };
             
@@ -144,7 +146,7 @@ const CodeEditor = ({ socket, roomId, username }) => {
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0d1117', color: '#e6edf3', fontFamily: "'Inter', sans-serif" }}>
 
             {/* ── Toolbar ── */}
-            <div style={{ padding: '12px 16px', background: '#161b22', borderBottom: '1px solid #30363d', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
+            <div style={{ padding: '8px 16px', background: '#161b22', borderBottom: '1px solid #30363d', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', minHeight: '50px' }}>
 
                 {/* Language Selector */}
                 <div style={{ position: 'relative' }}>
@@ -285,7 +287,7 @@ const CodeEditor = ({ socket, roomId, username }) => {
                                     : <XCircle size={14} color="#f85149" />
                                 }
                                 <span style={{ fontSize: '11px', fontWeight: '700', color: output.exitCode === 0 ? '#3fb950' : '#f85149' }}>
-                                    {output.exitCode === 0 ? 'SUCCESS' : 'ERROR'} — {output.language}
+                                    {output.status?.toUpperCase()} — {output.language}
                                 </span>
                             </div>
                             {output.stdout && (

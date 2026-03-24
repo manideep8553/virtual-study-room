@@ -732,87 +732,72 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 {/* FLOATING CONTROLS */}
                 <div className="floating-controls" style={{
                     position: 'absolute',
-                    bottom: '32px',
+                    bottom: window.innerWidth <= 768 ? '16px' : '32px',
                     left: '50%',
                     transform: showControls ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(120px)',
                     opacity: showControls ? 1 : 0,
                     pointerEvents: showControls ? 'auto' : 'none',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 24px',
-                    background: 'rgba(20, 20, 20, 0.85)',
-                    backdropFilter: 'blur(20px)',
+                    gap: window.innerWidth <= 768 ? '6px' : '12px',
+                    padding: window.innerWidth <= 768 ? '8px 12px' : '12px 24px',
+                    background: 'rgba(20, 20, 20, 0.9)',
+                    backdropFilter: 'blur(25px)',
                     borderRadius: '100px',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
-                    boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
-                    zIndex: 200,
-                    transition: 'opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
+                    zIndex: 2000, // Above everything
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
                 }}>
                     <button onClick={toggleMic} className={`control-btn ${!isMicOn ? 'off' : ''}`} title="Mute/Unmute">
-                        {isMicOn ? <Mic size={20} /> : <MicOff size={20} />}
+                        {isMicOn ? <Mic size={window.innerWidth <= 768 ? 16 : 20} /> : <MicOff size={window.innerWidth <= 768 ? 16 : 20} />}
                     </button>
                     <button onClick={toggleVideo} className={`control-btn ${!isVidOn ? 'off' : ''}`} title="Camera On/Off">
-                        {isVidOn ? <Video size={20} /> : <VideoOff size={20} />}
+                        {isVidOn ? <Video size={window.innerWidth <= 768 ? 16 : 20} /> : <VideoOff size={window.innerWidth <= 768 ? 16 : 20} />}
                     </button>
 
                     <button onClick={toggleHand} className={`control-btn ${isHandRaised ? 'active' : ''}`} title="Raise Hand" style={{ background: isHandRaised ? '#eab308' : '' }}>
-                        <Hand size={20} fill={isHandRaised ? "white" : "none"} />
+                        <Hand size={window.innerWidth <= 768 ? 16 : 20} fill={isHandRaised ? "white" : "none"} />
                     </button>
 
                     <div className="control-divider"></div>
 
-                    <button onClick={() => { setActiveTab('chat'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'chat' ? 'active' : ''}`} title="Chat" style={{ position: 'relative' }}>
-                        <MessageSquare size={20} />
-                        {unreadCount > 0 && (
-                            <div style={{
-                                position: 'absolute',
-                                top: '-6px',
-                                right: '-6px',
-                                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                                color: 'white',
-                                borderRadius: '10px',
-                                padding: '2px 6px',
-                                fontSize: '10px',
-                                fontWeight: '900',
-                                minWidth: '14px',
-                                textAlign: 'center',
-                                border: '2px solid #141414',
-                                boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-                                animation: 'bounce 0.4s ease-out'
-                            }}>
-                                {unreadCount > 9 ? '9+' : unreadCount}
-                            </div>
-                        )}
+                    <button onClick={() => { setActiveTab('chat'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'chat' ? 'active' : ''}`} title="Chat">
+                        <MessageSquare size={window.innerWidth <= 768 ? 16 : 20} />
                     </button>
-                    <button onClick={() => { setActiveTab('participants'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'participants' ? 'active' : ''}`} title="Participants">
-                        <Users size={20} />
-                    </button>
+                    
+                    {/* Collaborative Tools */}
                     <button onClick={() => { setActiveTab('code'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'code' ? 'active' : ''}`} title="Code Editor">
-                        <Code2 size={20} />
+                        <Code2 size={window.innerWidth <= 768 ? 16 : 20} />
                     </button>
                     <button onClick={() => { setActiveTab('whiteboard'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'whiteboard' ? 'active' : ''}`} title="Whiteboard">
-                        <PenTool size={20} />
-                    </button>
-                    <button onClick={() => { setActiveTab('tools'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'tools' ? 'active' : ''}`} title="Focus Timer">
-                        <Timer size={20} />
-                    </button>
-                    <button onClick={() => { setActiveTab('share'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'share' ? 'active' : ''}`} title="Resources & Screen">
-                        <Monitor size={20} />
-                    </button>
-                    <button onClick={() => { setActiveTab('ai'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'ai' ? 'active' : ''}`} title="AI Study Recap" style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%)', border: 'none' }}>
-                        <Wand2 size={20} color="white" />
+                        <PenTool size={window.innerWidth <= 768 ? 16 : 20} />
                     </button>
 
-                    <button onClick={onLeave} className="control-btn hangup" title="Leave Room">
-                        <PhoneOff size={20} />
+                    {/* Secondary tools hidden on very small phones or just spaced better */}
+                    {window.innerWidth > 480 && (
+                        <>
+                            <button onClick={() => { setActiveTab('tools'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'tools' ? 'active' : ''}`} title="Focus Timer">
+                                <Timer size={window.innerWidth <= 768 ? 16 : 20} />
+                            </button>
+                            <button onClick={() => { setActiveTab('ai'); setShowSidePanel(true); }} className={`control-btn ${showSidePanel && activeTab === 'ai' ? 'active' : ''}`} title="AI Study Recap" style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%)', border: 'none' }}>
+                                <Wand2 size={window.innerWidth <= 768 ? 16 : 20} color="white" />
+                            </button>
+                        </>
+                    )}
+
+                    <button onClick={onLeave} className="control-btn hangup" title="Leave">
+                        <PhoneOff size={window.innerWidth <= 768 ? 16 : 20} />
                     </button>
                 </div>
             </div>
 
             {/* Side Panel */}
             < div style={{
-                width: showSidePanel ? (['whiteboard', 'code'].includes(activeTab) ? '650px' : '380px') : '0px',
+                position: window.innerWidth <= 768 && showSidePanel ? 'fixed' : 'relative',
+                inset: window.innerWidth <= 768 ? 0 : 'auto',
+                width: showSidePanel ? (window.innerWidth <= 768 ? '100%' : (['whiteboard', 'code'].includes(activeTab) ? '650px' : '380px')) : '0px',
+                height: window.innerWidth <= 768 ? '100%' : 'auto',
                 opacity: showSidePanel ? 1 : 0,
                 pointerEvents: showSidePanel ? 'auto' : 'none',
                 background: '#0f0f0f',
@@ -820,7 +805,7 @@ const Room = ({ socket, roomId, roomName, username, onLeave, onRename }) => {
                 display: 'flex',
                 flexDirection: 'column',
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                zIndex: 300,
+                zIndex: 1000, // Top priority on mobile
                 overflow: 'hidden'
             }}>
                 <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
