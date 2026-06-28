@@ -538,30 +538,75 @@ io.on('connection', (socket) => {
   socket.on('get_study_summary', async (roomId) => {
     try {
       const room = await RoomModel.findOne({ id: roomId });
-      const recentMessages = await MessageModel.find({ roomId }).limit(10).sort({ createdAt: -1 });
+      const recentMessages = await MessageModel.find({ roomId }).limit(20).sort({ createdAt: -1 });
       const files = await ResourceModel.find({ roomId }).limit(5);
 
-      // Analyze transcript hints (In a real app, you'd send this to OpenAI/Gemini)
-      const messageText = recentMessages.map(m => m.message).join(' ');
-      const hasMath = /math|calc|integral|equation/.test(messageText.toLowerCase());
-      const hasCoding = /code|function|debug|array|javascript/.test(messageText.toLowerCase());
+      const messageText = recentMessages.map(m => `[${m.username}]: ${m.message}`).join('\n');
+      const fileNames = files.map(f => f.fileName).join(', ');
 
-      const summary = {
-        topic: room ? room.name : "Study Session",
-        duration: "45 Minutes",
-        overview: `Today's session focused heavily on ${hasCoding ? 'technical implementation and logic' : hasMath ? 'mathematical concepts and problem solving' : 'collaborative resource analysis'}. The group achieved significant clarity on primary objectives.`,
-        points: [
-          "Clarified the initial project scope and mission statement.",
-          "Collaborated on shared materials to identify key constraints.",
-          "Aligned on next steps and practical implementation strategies.",
-          "Discussed potential edge cases and optimized current approach."
-        ],
-        references: files.map(f => f.fileName).length > 0 ? files.map(f => f.fileName) : ["Shared Session Notes", "Discussion Transcript"]
-      };
+      const geminiKey = process.env.GEMINI_API_KEY;
+      let summary;
+
+      if (geminiKey) {
+        const prompt = `You are an AI study assistant. Analyze the following study session chat transcript and shared resources, then return a JSON summary (no markdown, no code fences) with exactly these fields:
+{
+  "topic": "string (session topic derived from messages)",
+  "duration": "string (estimated duration, e.g. '45 Minutes')",
+  "overview": "string (2-3 sentence summary of what was covered)",
+  "points": ["string (4-6 key takeaways as bullet points)"],
+  "references": ["string (relevant file names or discussed topics)"]
+}
+
+Room name: ${room ? room.name : 'Study Session'}
+Shared files: ${fileNames || 'None'}
+
+Chat transcript:
+${messageText || 'No messages yet.'}`;
+
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 0.4,
+                maxOutputTokens: 1024,
+                responseMimeType: 'application/json'
+              }
+            })
+          }
+        );
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(`Gemini API ${resp.status}: ${errText}`);
+        }
+
+        const data = await resp.json();
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        summary = JSON.parse(rawText.replace(/```json\s*|```\s*$/g, '').trim());
+      } else {
+        summary = {
+          topic: room ? room.name : "Study Session",
+          duration: "45 Minutes",
+          overview: "AI summarization is not configured. Set GEMINI_API_KEY in server environment variables to enable real AI summaries.",
+          points: ["Enable GEMINI_API_KEY for AI-powered summarization."],
+          references: ["N/A"]
+        };
+      }
 
       socket.emit('summary_result', summary);
     } catch (err) {
-      console.log("Summary generation error:", err);
+      console.log("Summary generation error:", err.message);
+      socket.emit('summary_result', {
+        topic: "Summary Unavailable",
+        duration: "N/A",
+        overview: "Failed to generate AI summary. Please try again.",
+        points: ["An error occurred while generating the summary."],
+        references: []
+      });
     }
   });
 
