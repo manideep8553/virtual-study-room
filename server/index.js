@@ -548,7 +548,7 @@ io.on('connection', (socket) => {
       let summary;
 
       if (geminiKey) {
-        const prompt = `You are an AI study assistant. Analyze the following study session chat transcript and shared resources, then return a JSON summary (no markdown, no code fences) with exactly these fields:
+        const prompt = `You are an AI study assistant. Analyze the following study session chat transcript and shared resources, then return a JSON summary with exactly these fields:
 {
   "topic": "string (session topic derived from messages)",
   "duration": "string (estimated duration, e.g. '45 Minutes')",
@@ -556,6 +556,8 @@ io.on('connection', (socket) => {
   "points": ["string (4-6 key takeaways as bullet points)"],
   "references": ["string (relevant file names or discussed topics)"]
 }
+
+Return ONLY valid JSON. No markdown, no code fences, no explanation.
 
 Room name: ${room ? room.name : 'Study Session'}
 Shared files: ${fileNames || 'None'}
@@ -572,22 +574,27 @@ ${messageText || 'No messages yet.'}`;
               contents: [{ role: 'user', parts: [{ text: prompt }] }],
               generationConfig: {
                 temperature: 0.4,
-                maxOutputTokens: 1024,
-                responseMimeType: 'application/json'
+                maxOutputTokens: 1024
               }
             })
           }
         );
 
+        const responseText = await resp.text();
+
         if (!resp.ok) {
-          const errText = await resp.text();
-          throw new Error(`Gemini API ${resp.status}: ${errText}`);
+          console.error(`Gemini API error ${resp.status}: ${responseText}`);
+          throw new Error(`Gemini API ${resp.status}: ${responseText}`);
         }
 
-        const data = await resp.json();
+        const data = JSON.parse(responseText);
         const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        summary = JSON.parse(rawText.replace(/```json\s*|```\s*$/g, '').trim());
+
+        // Strip any markdown code fences the model adds
+        const cleaned = rawText.replace(/```(?:json)?\s*\n?/gi, '').trim();
+        summary = JSON.parse(cleaned);
       } else {
+        console.log('ℹ️ GEMINI_API_KEY not set. Set it in your Render environment variables for AI summaries.');
         summary = {
           topic: room ? room.name : "Study Session",
           duration: "45 Minutes",
@@ -599,12 +606,12 @@ ${messageText || 'No messages yet.'}`;
 
       socket.emit('summary_result', summary);
     } catch (err) {
-      console.log("Summary generation error:", err.message);
+      console.error("Summary generation error:", err.message);
       socket.emit('summary_result', {
         topic: "Summary Unavailable",
         duration: "N/A",
-        overview: "Failed to generate AI summary. Please try again.",
-        points: ["An error occurred while generating the summary."],
+        overview: "Failed to generate AI summary. Check that GEMINI_API_KEY is set correctly in your server environment.",
+        points: ["Ensure GEMINI_API_KEY env var is set on Render", "The API key must have access to the Gemini 2.0 Flash model", "Check server logs for details"],
         references: []
       });
     }

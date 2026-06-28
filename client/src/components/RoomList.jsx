@@ -240,7 +240,7 @@ const RoomList = ({ socket, currentUser, onJoinRoom }) => {
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                 <span style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>
-                                    {room.participants}/10 Joined
+                                    {room.participants || 0} Joined
                                 </span>
                             </div>
 
